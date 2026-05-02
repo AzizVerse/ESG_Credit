@@ -1,0 +1,287 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  ENTERPRISE
+}
+
+enum ApplicationStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+}
+
+enum ZoneType {
+  URBAN
+  PERI_URBAN
+  RURAL
+}
+
+enum ProjectNature {
+  NEW_PROJECT
+  EXTENSION
+  MODERNIZATION
+}
+
+enum QuestionType {
+  TEXT
+  TEXTAREA
+  NUMBER
+  BOOLEAN
+  SINGLE_CHOICE
+  MULTIPLE_CHOICE
+  DATE
+  TABLE
+  FILE
+}
+
+enum MarketType {
+  CORPORATE
+  GE
+  PME
+  TPE
+}
+
+enum ReviewStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum CommitteeDecisionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  APPROVED_WITH_RESERVES
+}
+
+enum ActionPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum CorrectiveActionStatus {
+  PENDING
+  IN_PROGRESS
+  DONE
+  CANCELLED
+}
+
+model User {
+  id                    String                  @id @default(uuid())
+  name                  String
+  email                 String                  @unique
+  password              String
+  role                  Role
+  companyId             String?
+  company               Company?                @relation(fields: [companyId], references: [id])
+  uploadedAttachments   ApplicationAttachment[] @relation("AttachmentUploader")
+  adminReviews          AdminReview[]           @relation("AdminReviewer")
+  committeeDecisions    CommitteeDecision[]     @relation("CommitteeDecider")
+  assignedActions       CorrectiveAction[]      @relation("ActionAssignee")
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+}
+
+model Company {
+  id                  String        @id @default(uuid())
+  name                String
+  legalForm           String
+  sector              String
+  activityDescription String
+  address             String
+  users               User[]
+  applications        Application[]
+  projectProfiles     ProjectProfile[]
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+}
+
+model Application {
+  id                   String                @id @default(uuid())
+  companyId            String
+  company              Company               @relation(fields: [companyId], references: [id])
+  status               ApplicationStatus     @default(DRAFT)
+  projectName          String
+  projectType          String
+  activityType         String
+  financingAmount      Float
+  location             String
+  categoryAuto         String
+  categoryFinal        String?
+  projectProfile       ProjectProfile?
+  questionnaireAnswers QuestionnaireAnswer[]
+  attachments          ApplicationAttachment[]
+  adminReviews         AdminReview[]
+  committeeDecisions   CommitteeDecision[]
+  correctiveActions    CorrectiveAction[]
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+}
+
+model QuestionnaireAnswer {
+  id            String      @id @default(uuid())
+  applicationId String
+  section       String
+  questionCode  String
+  answerValue   String
+  answerLabel   String?
+  comment       String?
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([applicationId, questionCode])
+}
+
+model ProjectProfile {
+  id                String        @id @default(uuid())
+  applicationId     String        @unique
+  companyId         String
+  company           Company       @relation(fields: [companyId], references: [id])
+  application       Application   @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  projectNature     ProjectNature?
+  marketType        MarketType?
+  zoneType          ZoneType?
+  projectSummary    String?
+  siteLocation      String?
+  estimatedDuration String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+}
+
+model FormTemplate {
+  id          String        @id @default(uuid())
+  name        String
+  version     String
+  isActive    Boolean       @default(false)
+  sections    FormSection[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@unique([name, version])
+}
+
+model FormSection {
+  id             String         @id @default(uuid())
+  templateId     String
+  template       FormTemplate   @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  code           String
+  title          String
+  description    String?
+  order          Int
+  questions      FormQuestion[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@unique([templateId, code])
+  @@unique([templateId, order])
+}
+
+model FormQuestion {
+  id               String               @id @default(uuid())
+  sectionId        String
+  section          FormSection          @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  code             String
+  label            String
+  type             QuestionType
+  order            Int
+  isRequired       Boolean              @default(false)
+  hasComment       Boolean              @default(false)
+  isFilterQuestion Boolean              @default(false)
+  requiresAttachment Boolean            @default(false)
+  helpText         String?
+  metadata         Json?
+  options          FormQuestionOption[]
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  @@unique([sectionId, code])
+  @@unique([sectionId, order])
+}
+
+model FormQuestionOption {
+  id          String       @id @default(uuid())
+  questionId  String
+  question    FormQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  value       String
+  label       String
+  order       Int
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@unique([questionId, value])
+  @@unique([questionId, order])
+}
+
+model ApplicationAttachment {
+  id             String      @id @default(uuid())
+  applicationId  String
+  application    Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  originalName   String?
+  fileName       String
+  filePath       String
+  fileType       String?
+  fileSize       Int?
+  documentType   String?
+  mimeType       String?
+  description    String?
+  uploadedById   String?
+  uploadedBy     User?       @relation("AttachmentUploader", fields: [uploadedById], references: [id])
+  uploadedAt     DateTime    @default(now())
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+}
+
+model AdminReview {
+  id             String       @id @default(uuid())
+  applicationId  String
+  application    Application  @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  reviewerId     String
+  reviewer       User         @relation("AdminReviewer", fields: [reviewerId], references: [id])
+  status         ReviewStatus @default(NOT_STARTED)
+  notes          String?
+  reviewedAt     DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+}
+
+model CommitteeDecision {
+  id             String                  @id @default(uuid())
+  applicationId  String
+  application    Application             @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  decidedById    String?
+  decidedBy      User?                   @relation("CommitteeDecider", fields: [decidedById], references: [id])
+  status         CommitteeDecisionStatus @default(PENDING)
+  notes          String?
+  decidedAt      DateTime?
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+}
+
+model CorrectiveAction {
+  id                 String                 @id @default(uuid())
+  applicationId      String
+  application        Application            @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  title              String
+  description        String?
+  priority           ActionPriority         @default(MEDIUM)
+  status             CorrectiveActionStatus @default(PENDING)
+  dueDate            DateTime?
+  assignedToId       String?
+  assignedTo         User?                  @relation("ActionAssignee", fields: [assignedToId], references: [id])
+  completedAt        DateTime?
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+}

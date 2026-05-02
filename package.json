@@ -1,0 +1,48 @@
+{
+  "name": "esg",
+  "version": "1.0.0",
+  "description": "Backend scaffold for a small ESG assessment web app",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "vite --config vite.config.mjs",
+    "server:dev": "nodemon src/server.js",
+    "start": "node src/server.js",
+    "seed": "node prisma/seed.js",
+    "prisma:generate": "prisma generate",
+    "prisma:push": "prisma db push",
+    "prisma:seed": "node prisma/seed.js"
+  },
+  "keywords": [
+    "esg",
+    "express",
+    "prisma",
+    "sqlite"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "prisma": {
+    "seed": "node prisma/seed.js"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.0.4",
+    "nodemon": "^3.1.14",
+    "prisma": "^6.19.3",
+    "vite": "^7.1.10"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.3",
+    "axios": "^1.12.2",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "multer": "^2.0.2",
+    "morgan": "^1.10.1",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-router-dom": "^7.9.4"
+  }
+}
