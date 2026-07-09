@@ -13,6 +13,10 @@ function addFlag(flags, flag) {
   }
 }
 
+function isLowPermitExposureSector(detectedSector) {
+  return ["Services bancaires / FI"].includes(detectedSector);
+}
+
 function buildRedFlags({ answersByCode, category, detectedSector }) {
   const flags = [];
 
@@ -63,7 +67,7 @@ function buildRedFlags({ answersByCode, category, detectedSector }) {
 
   if (isNo(answersByCode.REG_005)) {
     addFlag(flags, {
-      severity: "MAJOR",
+      severity: isLowPermitExposureSector(detectedSector) ? "MEDIUM" : "MAJOR",
       pillar: "Governance",
       message: "Permis ou autorisation d’exploitation absents.",
       questionCode: "REG_005",
@@ -229,7 +233,7 @@ function buildRedFlags({ answersByCode, category, detectedSector }) {
   }
 
   if (
-    ["Textile", "Ciment / industrie lourde", "Agroalimentaire", "Tourisme", "Transport", "Manufacturing / industrie"].includes(detectedSector) &&
+    ["Textile", "Industrie lourde", "Agroalimentaire", "BTP / construction", "Transport"].includes(detectedSector) &&
     isNo(answersByCode.CLIMATE_008)
   ) {
     addFlag(flags, {

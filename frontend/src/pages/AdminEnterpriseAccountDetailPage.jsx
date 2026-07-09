@@ -89,7 +89,16 @@ function AdminEnterpriseAccountDetailPage() {
               </div>
 
               <div className="table-wrapper">
-                <table className="data-table">
+                <table className="data-table admin-table">
+                  <colgroup>
+                    <col style={{ width: "20%" }} />
+                    <col style={{ width: "11%" }} />
+                    <col style={{ width: "16%" }} />
+                    <col style={{ width: "12%" }} />
+                    <col style={{ width: "14%" }} />
+                    <col style={{ width: "13%" }} />
+                    <col style={{ width: "14%" }} />
+                  </colgroup>
                   <thead>
                     <tr>
                       <th>Nom du projet</th>
@@ -104,17 +113,23 @@ function AdminEnterpriseAccountDetailPage() {
                   <tbody>
                     {(account.applications || []).map((application) => (
                       <tr key={application.id}>
-                        <td>{application.projectName}</td>
+                        <td className="cell-wrap cell-clamp-2" title={application.projectName}>
+                          {application.projectName}
+                        </td>
                         <td>
                           <span className={`status-badge status-${application.status?.toLowerCase()}`}>
                             {getStatusLabel(application.status)}
                           </span>
                         </td>
-                        <td>{application.projectType || "-"}</td>
-                        <td>{application.financingAmount ?? "-"}</td>
-                        <td>{application.location || "-"}</td>
+                        <td className="cell-wrap cell-clamp-2" title={application.projectType || "-"}>
+                          {application.projectType || "-"}
+                        </td>
+                        <td className="numeric-cell">{application.financingAmount ?? "-"}</td>
+                        <td className="cell-wrap cell-clamp-2" title={application.location || "-"}>
+                          {application.location || "-"}
+                        </td>
                         <td>{new Date(application.createdAt).toLocaleDateString("fr-FR")}</td>
-                        <td>
+                        <td className="table-action-cell">
                           <Link
                             to={`/admin/applications/${application.id}`}
                             className="ghost-button"

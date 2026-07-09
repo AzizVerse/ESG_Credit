@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 
 import ProtectedRoute from "./components/ProtectedRoute";
 import AdminApplicationDetail from "./pages/AdminApplicationDetail";
+import AdminApplicationsPage from "./pages/AdminApplicationsPage";
 import AdminCreateEnterpriseAccountPage from "./pages/AdminCreateEnterpriseAccountPage";
 import AdminDashboard from "./pages/AdminDashboard";
 import AdminEnterpriseAccountDetailPage from "./pages/AdminEnterpriseAccountDetailPage";
@@ -62,6 +63,14 @@ function App() {
         element={
           <ProtectedRoute allowedRoles={["ADMIN"]}>
             <AdminDashboard />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/applications"
+        element={
+          <ProtectedRoute allowedRoles={["ADMIN"]}>
+            <AdminApplicationsPage />
           </ProtectedRoute>
         }
       />

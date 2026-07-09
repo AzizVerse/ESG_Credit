@@ -75,7 +75,14 @@ function AdminEnterpriseAccountsPage() {
 
         {!loading ? (
           <div className="table-wrapper">
-            <table className="data-table">
+            <table className="data-table admin-table">
+              <colgroup>
+                <col style={{ width: "28%" }} />
+                <col style={{ width: "24%" }} />
+                <col style={{ width: "14%" }} />
+                <col style={{ width: "18%" }} />
+                <col style={{ width: "16%" }} />
+              </colgroup>
               <thead>
                 <tr>
                   <th>Email</th>
@@ -88,11 +95,11 @@ function AdminEnterpriseAccountsPage() {
               <tbody>
                 {filteredAccounts.map((account) => (
                   <tr key={account.id}>
-                    <td>{account.email}</td>
-                    <td>{account.companyName || "-"}</td>
-                    <td>{account.applicationsCount ?? 0}</td>
+                    <td className="cell-wrap cell-clamp-2" title={account.email}>{account.email}</td>
+                    <td className="cell-wrap cell-clamp-2" title={account.companyName || "-"}>{account.companyName || "-"}</td>
+                    <td className="numeric-cell">{account.applicationsCount ?? 0}</td>
                     <td>{new Date(account.createdAt).toLocaleDateString("fr-FR")}</td>
-                    <td>
+                    <td className="table-action-cell">
                       <Link
                         to={`/admin/enterprise-accounts/${account.id}`}
                         className="ghost-button"

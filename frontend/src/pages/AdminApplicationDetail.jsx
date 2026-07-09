@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 
 import api from "../api/client";
 import Layout from "../components/Layout";
@@ -59,6 +59,85 @@ function getStatusLabel(status) {
   };
 
   return labels[status] || status || "-";
+}
+
+function getRiskLabel(level) {
+  return level || "-";
+}
+
+function getSeverityLabel(level) {
+  const labels = {
+    CRITICAL: "Critique",
+    MAJOR: "Majeur",
+    MEDIUM: "Moyen",
+  };
+
+  return labels[level] || level || "-";
+}
+
+function getPriorityLabel(level) {
+  const labels = {
+    HIGH: "Haute priorité",
+    MEDIUM: "Priorité moyenne",
+    LOW: "Faible priorité",
+  };
+
+  return labels[level] || level || "-";
+}
+
+function getPillarLabel(pillar) {
+  const labels = {
+    Environment: "Environnement",
+    Social: "Social",
+    Governance: "Gouvernance",
+  };
+
+  return labels[pillar] || pillar || "-";
+}
+
+function getCategoryClass(category) {
+  return (category || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace("+", "plus")
+    .replace(/[^a-z]/g, "") || "unknown";
+}
+
+function getScoreInterpretation(score) {
+  if (typeof score !== "number") return "-";
+  if (score >= 80) return "Solide";
+  if (score >= 60) return "Acceptable";
+  if (score >= 40) return "À renforcer";
+  return "Critique";
+}
+
+function getExecutiveSummary(result) {
+  if (!result) {
+    return "";
+  }
+
+  const base =
+    result.riskLevel === "Élevé"
+      ? `Le dossier présente une catégorie SGES ${result.categoryAuto || "-"} avec un niveau de risque ${result.riskLevel}.`
+      : result.riskLevel === "Modéré"
+        ? `Le dossier présente une catégorie SGES ${result.categoryAuto || "-"} avec un niveau de risque ${result.riskLevel}, nécessitant un suivi ciblé.`
+        : `Le dossier présente une catégorie SGES ${result.categoryAuto || "-"} avec un niveau de risque ${result.riskLevel}, globalement maîtrisé.`;
+
+  if (!result.redFlags?.length) {
+    return `${base} Aucun red flag critique n’a été identifié à ce stade.`;
+  }
+
+  const topFlags = result.redFlags
+    .slice()
+    .sort((left, right) => {
+      const order = { CRITICAL: 0, MAJOR: 1, MEDIUM: 2 };
+      return (order[left.severity] ?? 9) - (order[right.severity] ?? 9);
+    })
+    .slice(0, 3)
+    .map((flag) => flag.message);
+
+  return `${base} Les principaux points de vigilance concernent ${topFlags.join(", ")}.`;
 }
 
 function buildFormMetadata(formTemplate) {
@@ -179,6 +258,15 @@ function renderAnswerTable(answer) {
   );
 }
 
+function groupBy(items, key) {
+  return items.reduce((accumulator, item) => {
+    const bucketKey = item[key] || "OTHER";
+    accumulator[bucketKey] = accumulator[bucketKey] || [];
+    accumulator[bucketKey].push(item);
+    return accumulator;
+  }, {});
+}
+
 function AdminApplicationDetail() {
   const { id } = useParams();
   const [application, setApplication] = useState(null);
@@ -248,6 +336,22 @@ function AdminApplicationDetail() {
     () => groupAttachmentsByDocumentType(attachments),
     [attachments]
   );
+  const redFlagsBySeverity = useMemo(() => {
+    const order = ["CRITICAL", "MAJOR", "MEDIUM"];
+    const grouped = groupBy(esgResult?.redFlags || [], "severity");
+    return order.map((severity) => ({
+      severity,
+      items: grouped[severity] || [],
+    }));
+  }, [esgResult]);
+  const recommendationsByPriority = useMemo(() => {
+    const order = ["HIGH", "MEDIUM", "LOW"];
+    const grouped = groupBy(esgResult?.recommendations || [], "priority");
+    return order.map((priority) => ({
+      priority,
+      items: grouped[priority] || [],
+    }));
+  }, [esgResult]);
 
   async function handleDownloadAttachment(attachment) {
     const response = await api.get(`/attachments/${attachment.id}/download`, {
@@ -300,6 +404,16 @@ function AdminApplicationDetail() {
     <Layout
       title="Examen de la demande"
       subtitle="Analyse détaillée du dossier SGES soumis par l’entreprise."
+      actions={
+        <div className="topbar-actions">
+          <Link to="/admin" className="ghost-button">
+            Retour au tableau de bord
+          </Link>
+          <Link to="/admin/applications" className="ghost-button">
+            Retour aux demandes ESG
+          </Link>
+        </div>
+      }
     >
       <section className="stack">
         {loading ? <p className="muted-text">Chargement du détail de la demande...</p> : null}
@@ -478,21 +592,29 @@ function AdminApplicationDetail() {
 
             {activeTab === "esg" ? (
               <section className="panel stack">
-                <div className="summary-row">
+                <div className="section-header">
                   <div>
                     <h3>Bilan ESG</h3>
                     <p className="muted-text">
                       Résultat calculé par le moteur de règles SGES/ESG.
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    className="primary-button"
-                    onClick={handleCalculateScoring}
-                    disabled={esgActionLoading}
-                  >
-                    {esgResult ? "Recalculer le bilan ESG" : "Calculer le bilan ESG"}
-                  </button>
+                  <div className="topbar-actions">
+                    <Link to="/admin" className="ghost-button">
+                      Retour au tableau de bord
+                    </Link>
+                    <Link to="/admin/applications" className="ghost-button">
+                      Retour aux demandes ESG
+                    </Link>
+                    <button
+                      type="button"
+                      className="primary-button"
+                      onClick={handleCalculateScoring}
+                      disabled={esgActionLoading}
+                    >
+                      {esgResult ? "Recalculer le bilan ESG" : "Calculer le bilan ESG"}
+                    </button>
+                  </div>
                 </div>
 
                 {esgLoading ? (
@@ -500,94 +622,196 @@ function AdminApplicationDetail() {
                 ) : null}
 
                 {!esgLoading && !esgResult ? (
-                  <>
-                    <p className="muted-text">
-                      {esgError || "Aucun bilan ESG calculé pour cette demande."}
-                    </p>
-                  </>
+                  <p className="muted-text">
+                    {esgError || "Aucun bilan ESG calculé pour cette demande."}
+                  </p>
                 ) : null}
 
                 {esgResult ? (
                   <>
-                    <div className="detail-grid">
-                      <div className="summary-row"><span>Catégorie SGES</span><strong>{esgResult.categoryAuto || "-"}</strong></div>
-                      <div className="summary-row"><span>Niveau de risque</span><strong>{esgResult.riskLevel || "-"}</strong></div>
-                      <div className="summary-row"><span>Secteur détecté</span><strong>{esgResult.sector || "-"}</strong></div>
-                      <div className="summary-row"><span>Score Environnement</span><strong>{esgResult.scores?.environment ?? "-"}</strong></div>
-                      <div className="summary-row"><span>Score Social</span><strong>{esgResult.scores?.social ?? "-"}</strong></div>
-                      <div className="summary-row"><span>Score Gouvernance</span><strong>{esgResult.scores?.governance ?? "-"}</strong></div>
-                      <div className="summary-row"><span>Score global ESG</span><strong>{esgResult.scores?.global ?? "-"}</strong></div>
+                    <article className="esg-executive-card">
+                      <p className="eyebrow">Synthèse exécutive</p>
+                      <p className="executive-summary-text">{getExecutiveSummary(esgResult)}</p>
+                    </article>
+
+                    <div className="esg-summary-grid">
+                      <article className="metric-card esg-summary-card">
+                        <p className="metric-label">Catégorie SGES</p>
+                        <span className={`esg-badge esg-category-badge esg-category-${getCategoryClass(esgResult.categoryAuto)}`}>
+                          {esgResult.categoryAuto || "-"}
+                        </span>
+                      </article>
+                      <article className="metric-card esg-summary-card">
+                        <p className="metric-label">Niveau de risque</p>
+                        <span className={`esg-badge esg-risk-badge esg-risk-${(esgResult.riskLevel || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z]/g, "") || "unknown"}`}>
+                          {getRiskLabel(esgResult.riskLevel)}
+                        </span>
+                      </article>
+                      <article className="metric-card esg-summary-card">
+                        <p className="metric-label">Score global ESG</p>
+                        <strong className="metric-value metric-value-compact">{esgResult.scores?.global ?? "-"}</strong>
+                      </article>
+                      <article className="metric-card esg-summary-card">
+                        <p className="metric-label">Secteur détecté</p>
+                        <strong className="metric-value metric-value-text">{esgResult.sector || "-"}</strong>
+                      </article>
+                      <article className="metric-card esg-summary-card">
+                        <p className="metric-label">Calcul / moteur</p>
+                        <strong className="metric-value metric-value-text">
+                          {esgResult.calculatedAt
+                            ? new Date(esgResult.calculatedAt).toLocaleDateString("fr-FR")
+                            : "-"}
+                        </strong>
+                        <p className="muted-text">Version : {esgResult.engineVersion || "-"}</p>
+                      </article>
+                    </div>
+
+                    <div className="esg-score-grid">
+                      {[
+                        { label: "Environnement", value: esgResult.scores?.environment, pillar: "environment" },
+                        { label: "Social", value: esgResult.scores?.social, pillar: "social" },
+                        { label: "Gouvernance", value: esgResult.scores?.governance, pillar: "governance" },
+                      ].map((scoreCard) => (
+                        <article key={scoreCard.label} className="panel esg-score-card">
+                          <div className="section-header">
+                            <div>
+                              <h4>{scoreCard.label}</h4>
+                              <p className="muted-text">{getScoreInterpretation(scoreCard.value)}</p>
+                            </div>
+                            <strong className="score-card-value">{scoreCard.value ?? "-"}</strong>
+                          </div>
+                          <div className="progress-track">
+                            <div
+                              className={`progress-bar progress-bar-${scoreCard.pillar}`}
+                              style={{ width: `${Math.max(0, Math.min(scoreCard.value || 0, 100))}%` }}
+                            />
+                          </div>
+                        </article>
+                      ))}
                     </div>
 
                     <article className="stack">
                       <h4>Red flags</h4>
                       {!esgResult.redFlags?.length ? (
-                        <p className="muted-text">Aucun red flag identifié.</p>
+                        <div className="esg-success-state">
+                          <p className="success-text">Aucun red flag critique identifié.</p>
+                        </div>
                       ) : (
-                        esgResult.redFlags.map((flag, index) => {
-                          const questionDisplay = getQuestionDisplay(flag.questionCode, formMetadata);
+                        redFlagsBySeverity.map((group) =>
+                          group.items.length ? (
+                            <div key={group.severity} className="stack">
+                              <div className="section-header">
+                                <h4>{getSeverityLabel(group.severity)}</h4>
+                                <span className={`esg-badge esg-severity-${group.severity.toLowerCase()}`}>
+                                  {group.items.length}
+                                </span>
+                              </div>
+                              <div className="esg-card-grid">
+                                {group.items.map((flag, index) => {
+                                  const questionDisplay = getQuestionDisplay(flag.questionCode, formMetadata);
 
-                          return (
-                            <div key={`${flag.questionCode}-${index}`} className="question-review-card">
-                              <p><strong>Sévérité :</strong> {flag.severity}</p>
-                              <p><strong>Pilier :</strong> {flag.pillar}</p>
-                              {questionDisplay.label ? (
-                                <p><strong>Question :</strong> {questionDisplay.label}</p>
-                              ) : null}
-                              <p><strong>Message :</strong> {flag.message}</p>
-                              {questionDisplay.code ? (
-                                <p className="muted-text">Code interne : {questionDisplay.code}</p>
-                              ) : null}
+                                  return (
+                                    <div key={`${flag.questionCode}-${index}`} className="question-review-card esg-flag-card">
+                                      <div className="flag-card-head">
+                                        <span className={`esg-badge esg-severity-${flag.severity?.toLowerCase()}`}>
+                                          {getSeverityLabel(flag.severity)}
+                                        </span>
+                                        <span className="esg-badge esg-pillar-badge">
+                                          {getPillarLabel(flag.pillar)}
+                                        </span>
+                                      </div>
+                                      <p className="flag-message">{flag.message}</p>
+                                      {questionDisplay.label ? (
+                                        <p><strong>Question :</strong> {questionDisplay.label}</p>
+                                      ) : null}
+                                      {questionDisplay.code ? (
+                                        <p className="muted-text">Code interne : {questionDisplay.code}</p>
+                                      ) : null}
+                                    </div>
+                                  );
+                                })}
+                              </div>
                             </div>
-                          );
-                        })
+                          ) : null
+                        )
                       )}
                     </article>
 
-                    <article className="stack">
-                      <h4>Points forts</h4>
-                      {!esgResult.strengths?.length ? (
-                        <p className="muted-text">Aucun point fort mis en évidence.</p>
-                      ) : (
-                        esgResult.strengths.map((item, index) => <p key={`strength-${index}`}>• {item}</p>)
-                      )}
-                    </article>
+                    <div className="detail-grid esg-strength-weakness-grid">
+                      <article className="panel stack">
+                        <h4>Points forts</h4>
+                        {!esgResult.strengths?.length ? (
+                          <p className="muted-text">Aucun point fort mis en évidence.</p>
+                        ) : (
+                          <ul className="esg-bullet-list">
+                            {esgResult.strengths.map((item, index) => (
+                              <li key={`strength-${index}`}>{item}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </article>
 
-                    <article className="stack">
-                      <h4>Points faibles</h4>
-                      {!esgResult.weaknesses?.length ? (
-                        <p className="muted-text">Aucun point faible majeur identifié.</p>
-                      ) : (
-                        esgResult.weaknesses.map((item, index) => <p key={`weakness-${index}`}>• {item}</p>)
-                      )}
-                    </article>
+                      <article className="panel stack">
+                        <h4>Points faibles</h4>
+                        {!esgResult.weaknesses?.length ? (
+                          esgResult.redFlags?.length ? (
+                            <p className="muted-text">Des points de vigilance sont signalés dans les red flags ci-dessus.</p>
+                          ) : (
+                            <p className="muted-text">Aucun point faible majeur identifié.</p>
+                          )
+                        ) : (
+                          <ul className="esg-bullet-list">
+                            {esgResult.weaknesses.map((item, index) => (
+                              <li key={`weakness-${index}`}>{item}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </article>
+                    </div>
 
                     <article className="stack">
                       <h4>Recommandations</h4>
                       {!esgResult.recommendations?.length ? (
                         <p className="muted-text">Aucune recommandation générée.</p>
                       ) : (
-                        esgResult.recommendations.map((item, index) => {
-                          const sourceReferences = (item.sourceCodes || [])
-                            .map((code) => {
-                              const questionDisplay = getQuestionDisplay(code, formMetadata);
-                              return questionDisplay.label
-                                ? `${questionDisplay.label} (${code})`
-                                : code;
-                            })
-                            .filter(Boolean);
+                        recommendationsByPriority.map((group) =>
+                          group.items.length ? (
+                            <div key={group.priority} className="stack">
+                              <div className="section-header">
+                                <h4>{getPriorityLabel(group.priority)}</h4>
+                              </div>
+                              <div className="esg-card-grid">
+                                {group.items.map((item, index) => {
+                                  const sourceReferences = (item.sourceCodes || [])
+                                    .map((code) => {
+                                      const questionDisplay = getQuestionDisplay(code, formMetadata);
+                                      return questionDisplay.label
+                                        ? `${questionDisplay.label} (${code})`
+                                        : code;
+                                    })
+                                    .filter(Boolean);
 
-                          return (
-                            <div key={`recommendation-${index}`} className="question-review-card">
-                              <p><strong>Priorité :</strong> {item.priority}</p>
-                              <p><strong>Pilier :</strong> {item.pillar}</p>
-                              <p><strong>Action :</strong> {item.title}</p>
-                              {sourceReferences.length ? (
-                                <p><strong>Références :</strong> {sourceReferences.join(", ")}</p>
-                              ) : null}
+                                  return (
+                                    <div key={`recommendation-${group.priority}-${index}`} className="question-review-card esg-recommendation-card">
+                                      <div className="flag-card-head">
+                                        <span className={`esg-badge esg-priority-${item.priority?.toLowerCase()}`}>
+                                          {getPriorityLabel(item.priority)}
+                                        </span>
+                                        <span className="esg-badge esg-pillar-badge">
+                                          {getPillarLabel(item.pillar)}
+                                        </span>
+                                      </div>
+                                      <p className="recommendation-action">{item.title}</p>
+                                      {sourceReferences.length ? (
+                                        <p><strong>Références :</strong> {sourceReferences.join(", ")}</p>
+                                      ) : null}
+                                    </div>
+                                  );
+                                })}
+                              </div>
                             </div>
-                          );
-                        })
+                          ) : null
+                        )
                       )}
                     </article>
 
@@ -597,12 +821,27 @@ function AdminApplicationDetail() {
                         <p className="muted-text">Aucun détail de section disponible.</p>
                       ) : (
                         esgResult.sectionBreakdown.map((item) => (
-                          <div key={item.sectionCode} className="question-review-card">
-                            <p><strong>Section :</strong> {item.sectionTitle}</p>
-                            <p><strong>Pilier :</strong> {item.pillar}</p>
-                            <p><strong>Score :</strong> {item.score}</p>
-                            <p><strong>Synthèse :</strong> {item.summary}</p>
-                          </div>
+                          <details key={item.sectionCode} className="panel accordion-panel esg-section-card">
+                            <summary>
+                              <div className="accordion-summary-row">
+                                <span>{item.sectionTitle}</span>
+                                <span className="esg-badge esg-pillar-badge">{getPillarLabel(item.pillar)}</span>
+                              </div>
+                            </summary>
+                            <div className="stack accordion-body">
+                              <div className="section-header">
+                                <strong className="score-card-value">{item.score}</strong>
+                                <span className="muted-text">{getScoreInterpretation(item.score)}</span>
+                              </div>
+                              <div className="progress-track">
+                                <div
+                                  className={`progress-bar progress-bar-${(item.pillar || "").toLowerCase()}`}
+                                  style={{ width: `${Math.max(0, Math.min(item.score || 0, 100))}%` }}
+                                />
+                              </div>
+                              <p><strong>Synthèse :</strong> {item.summary}</p>
+                            </div>
+                          </details>
                         ))
                       )}
                     </article>

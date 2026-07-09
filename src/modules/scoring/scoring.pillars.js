@@ -11,6 +11,14 @@ const {
   responseScore,
   roundScore,
 } = require("./scoring.rules");
+const { getQuestionWeight, weightedAverage } = require("./scoring.weights");
+
+// Build a { score, weight } entry for the weighted section aggregation.
+// The weight comes from the question's materiality band and the detected
+// sector multiplier (see scoring.weights.js).
+function weightedEntry(code, score, sector) {
+  return { score, weight: getQuestionWeight(code, sector) };
+}
 
 function getQuestionLabel(questionMeta, code) {
   return questionMeta[code]?.label || code;
@@ -40,7 +48,7 @@ function calculateExposureScore(answer) {
   return null;
 }
 
-function calculateClimateScore(answersByCode) {
+function calculateClimateScore(answersByCode, sector) {
   const planScore = positiveAnswerScore(answersByCode.CLIMATE_008);
   const awarenessScore = positiveAnswerScore(answersByCode.CLIMATE_007);
   const plannedYearScore =
@@ -53,15 +61,30 @@ function calculateClimateScore(answersByCode) {
         : null;
   const investmentValue = Number(answersByCode.CLIMATE_011?.answerValue || 0);
   const investmentScore = investmentValue > 0 ? 100 : 20;
-  const awarenessList = [
-    awarenessScore,
-    planScore,
-    plannedYearScore,
-    transitionDetailScore,
-    investmentScore,
-  ];
 
-  return average(awarenessList);
+  return weightedAverage([
+    weightedEntry("CLIMATE_007", awarenessScore, sector),
+    weightedEntry("CLIMATE_008", planScore, sector),
+    weightedEntry("CLIMATE_009", plannedYearScore, sector),
+    weightedEntry("CLIMATE_010", transitionDetailScore, sector),
+    weightedEntry("CLIMATE_011", investmentScore, sector),
+  ]);
+}
+
+function addInsight(collection, message, questionCode = null) {
+  if (!message) {
+    return;
+  }
+
+  if (
+    collection.some(
+      (item) => item.message === message && item.questionCode === questionCode
+    )
+  ) {
+    return;
+  }
+
+  collection.push({ message, questionCode });
 }
 
 function createAccumulator() {
@@ -69,9 +92,9 @@ function createAccumulator() {
     environmentScores: [],
     socialScores: [],
     governanceScores: [],
-    strengths: new Set(),
-    weaknesses: new Set(),
-    sectionBreakdown: [],
+    strengths: [],
+    weaknesses: [],
+    sectionBreakdown: new Map(),
   };
 }
 
@@ -86,29 +109,40 @@ function addSection(accumulator, { sectionCode, sectionTitle, pillar, score, sum
   if (pillar === "Social") accumulator.socialScores.push(rounded);
   if (pillar === "Governance") accumulator.governanceScores.push(rounded);
 
-  accumulator.sectionBreakdown.push({
+  const existing = accumulator.sectionBreakdown.get(sectionCode);
+
+  if (existing) {
+    existing.scores.push(rounded);
+    if (summary) {
+      existing.summaries.add(summary);
+    }
+    return;
+  }
+
+  accumulator.sectionBreakdown.set(sectionCode, {
     sectionCode,
     sectionTitle,
     pillar,
-    score: rounded,
-    summary,
+    scores: [rounded],
+    summaries: new Set(summary ? [summary] : []),
   });
 }
 
 function scoreRegulatory(answersByCode, questionMeta, accumulator) {
-  const score = average([
-    positiveAnswerScore(answersByCode.REG_001),
-    eiaStatusScore(answersByCode.REG_002),
-    positiveAnswerScore(answersByCode.REG_003),
-    positiveAnswerScore(answersByCode.REG_004),
-    positiveAnswerScore(answersByCode.REG_005),
+  const sector = accumulator.sector;
+  const score = weightedAverage([
+    weightedEntry("REG_001", positiveAnswerScore(answersByCode.REG_001), sector),
+    weightedEntry("REG_002", eiaStatusScore(answersByCode.REG_002), sector),
+    weightedEntry("REG_003", positiveAnswerScore(answersByCode.REG_003), sector),
+    weightedEntry("REG_004", positiveAnswerScore(answersByCode.REG_004), sector),
+    weightedEntry("REG_005", positiveAnswerScore(answersByCode.REG_005), sector),
   ]);
 
   if (isYes(answersByCode.REG_001)) {
-    accumulator.strengths.add("Étude d’impact environnemental déclarée.");
+    addInsight(accumulator.strengths, "Étude d’impact environnemental déclarée.", "REG_001");
   }
   if (isNo(answersByCode.REG_001)) {
-    accumulator.weaknesses.add("Étude d’impact environnemental absente.");
+    addInsight(accumulator.weaknesses, "Étude d’impact environnemental absente.", "REG_001");
   }
 
   addSection(accumulator, {
@@ -124,18 +158,19 @@ function scoreRegulatory(answersByCode, questionMeta, accumulator) {
 }
 
 function scoreCertifications(answersByCode, questionMeta, accumulator) {
-  const score = average([
-    positiveAnswerScore(answersByCode.CERT_001),
-    positiveAnswerScore(answersByCode.CERT_005),
-    positiveAnswerScore(answersByCode.CERT_006),
-    positiveAnswerScore(answersByCode.CERT_007),
-    positiveAnswerScore(answersByCode.CERT_008),
-    positiveAnswerScore(answersByCode.CERT_010),
+  const sector = accumulator.sector;
+  const score = weightedAverage([
+    weightedEntry("CERT_001", positiveAnswerScore(answersByCode.CERT_001), sector),
+    weightedEntry("CERT_005", positiveAnswerScore(answersByCode.CERT_005), sector),
+    weightedEntry("CERT_006", positiveAnswerScore(answersByCode.CERT_006), sector),
+    weightedEntry("CERT_007", positiveAnswerScore(answersByCode.CERT_007), sector),
+    weightedEntry("CERT_008", positiveAnswerScore(answersByCode.CERT_008), sector),
+    weightedEntry("CERT_010", positiveAnswerScore(answersByCode.CERT_010), sector),
   ]);
 
-  if (isYes(answersByCode.CERT_005)) accumulator.strengths.add("Certification HACCP déclarée.");
-  if (isYes(answersByCode.CERT_007)) accumulator.strengths.add("Certification ISO 9001 déclarée.");
-  if (isYes(answersByCode.CERT_008)) accumulator.strengths.add("Certification ISO 14001 déclarée.");
+  if (isYes(answersByCode.CERT_005)) addInsight(accumulator.strengths, "Certification HACCP déclarée.", "CERT_005");
+  if (isYes(answersByCode.CERT_007)) addInsight(accumulator.strengths, "Certification ISO 9001 déclarée.", "CERT_007");
+  if (isYes(answersByCode.CERT_008)) addInsight(accumulator.strengths, "Certification ISO 14001 déclarée.", "CERT_008");
 
   addSection(accumulator, {
     sectionCode: "CERTIFICATIONS",
@@ -150,14 +185,25 @@ function scoreCertifications(answersByCode, questionMeta, accumulator) {
 }
 
 function scoreNp1(answersByCode, questionMeta, accumulator) {
+  const sector = accumulator.sector;
   const codes = ["NP1_001", "NP1_002", "NP1_003", "NP1_004", "NP1_005", "NP1_006", "NP1_007", "NP1_008"];
-  const score = average(codes.map((code) => positiveAnswerScore(answersByCode[code])));
+  const score = weightedAverage(
+    codes.map((code) => weightedEntry(code, positiveAnswerScore(answersByCode[code]), sector))
+  );
 
   if (isYes(answersByCode.NP1_001)) {
-    accumulator.strengths.add("Système d’évaluation et de suivi des risques E&S déclaré.");
+    addInsight(
+      accumulator.strengths,
+      "Système d’évaluation et de suivi des risques E&S déclaré.",
+      "NP1_001"
+    );
   }
   if (isNo(answersByCode.NP1_001)) {
-    accumulator.weaknesses.add("Absence de système formalisé d’évaluation et de suivi des risques E&S.");
+    addInsight(
+      accumulator.weaknesses,
+      "Absence de système formalisé d’évaluation et de suivi des risques E&S.",
+      "NP1_001"
+    );
   }
 
   addSection(accumulator, {
@@ -188,7 +234,11 @@ function scoreHsBloc1(answersByCode, questionMeta, accumulator) {
   const yesCount = codes.filter((code) => isYes(answersByCode[code])).length;
 
   if (yesCount >= 3) {
-    accumulator.weaknesses.add("Plusieurs nuisances opérationnelles ou expositions HSE sont déclarées.");
+    addInsight(
+      accumulator.weaknesses,
+      "Plusieurs nuisances opérationnelles ou expositions HSE sont déclarées.",
+      "PERFORMANCE_STANDARD_2_HS_BLOC_1"
+    );
   }
 
   addSection(accumulator, {
@@ -225,16 +275,19 @@ function scoreHsBloc2(answersByCode, questionMeta, accumulator) {
     "NP2_HS_B2_021",
     "NP2_HS_B2_022",
   ];
-  const score = average([
-    ...booleanCodes.map((code) => positiveAnswerScore(answersByCode[code])),
-    positiveAnswerScore(answersByCode.NP2_HS_B2_017),
+  const sector = accumulator.sector;
+  const score = weightedAverage([
+    ...booleanCodes.map((code) =>
+      weightedEntry(code, positiveAnswerScore(answersByCode[code]), sector)
+    ),
+    weightedEntry("NP2_HS_B2_017", positiveAnswerScore(answersByCode.NP2_HS_B2_017), sector),
   ]);
 
   if (isYes(answersByCode.NP2_HS_B2_020)) {
-    accumulator.strengths.add("Plan de sécurité / évacuation déclaré.");
+    addInsight(accumulator.strengths, "Plan de sécurité / évacuation déclaré.", "NP2_HS_B2_020");
   }
   if (isNo(answersByCode.NP2_HS_B2_020)) {
-    accumulator.weaknesses.add("Absence de plan de sécurité / évacuation.");
+    addInsight(accumulator.weaknesses, "Absence de plan de sécurité / évacuation.", "NP2_HS_B2_020");
   }
 
   addSection(accumulator, {
@@ -250,6 +303,10 @@ function scoreHsBloc2(answersByCode, questionMeta, accumulator) {
 }
 
 function scoreHr(answersByCode, questionMeta, accumulator) {
+  const sector = accumulator.sector;
+  // NP2_HR_Q003 / Q004 (child / forced labour) and NP2_HR_Q015 (ongoing
+  // litigation) are EXPOSURE / knockout questions handled via the red-flag
+  // channel, not scored numerically here.
   const hrCodes = [
     "NP2_HR_Q001",
     "NP2_HR_Q002",
@@ -263,35 +320,46 @@ function scoreHr(answersByCode, questionMeta, accumulator) {
     "NP2_HR_Q012",
     "NP2_HR_Q013",
     "NP2_HR_Q014",
-    "NP2_HR_Q015",
     "NP2_HR_Q016",
     "NP2_HR_SUPPLIERS_001",
   ];
-  const scores = hrCodes.map((code) => positiveAnswerScore(answersByCode[code]));
+  const entries = hrCodes.map((code) =>
+    weightedEntry(code, positiveAnswerScore(answersByCode[code]), sector)
+  );
   const accidentRows = parseTable(answersByCode.NP2_HR_ACCIDENT_TABLE);
   const totalOccurrences = accidentRows.reduce(
     (sum, row) => sum + Number(row.occurrence || 0),
     0
   );
+  const accidentScore =
+    totalOccurrences > 5 ? 35 : totalOccurrences > 2 ? 60 : accidentRows.length > 0 ? 80 : null;
 
+  if (accidentScore !== null) {
+    entries.push(weightedEntry("NP2_HR_ACCIDENT_TABLE", accidentScore, sector));
+  }
   if (totalOccurrences > 5) {
-    scores.push(35);
-    accumulator.weaknesses.add("Sinistralité travail élevée sur la période déclarée.");
-  } else if (totalOccurrences > 2) {
-    scores.push(60);
-  } else if (accidentRows.length > 0) {
-    scores.push(80);
+    addInsight(
+      accumulator.weaknesses,
+      "Sinistralité travail élevée sur la période déclarée.",
+      "NP2_HR_ACCIDENT_TABLE"
+    );
   }
 
   if (isYes(answersByCode.NP2_HR_Q010)) {
-    accumulator.strengths.add("Politiques et procédures RH déclarées.");
+    addInsight(accumulator.strengths, "Politiques et procédures RH déclarées.", "NP2_HR_Q010");
   }
   if (isNo(answersByCode.NP2_HR_Q010)) {
-    accumulator.weaknesses.add("Absence de politiques et procédures RH formalisées.");
+    addInsight(
+      accumulator.weaknesses,
+      "Absence de politiques et procédures RH formalisées.",
+      "NP2_HR_Q010"
+    );
   }
   if (isYes(answersByCode.NP2_HR_Q009)) {
-    accumulator.strengths.add("Personnel déclaré à la sécurité sociale.");
+    addInsight(accumulator.strengths, "Personnel déclaré à la sécurité sociale.", "NP2_HR_Q009");
   }
+
+  const sectionScore = weightedAverage(entries);
 
   addSection(accumulator, {
     sectionCode: "PERFORMANCE_STANDARD_2_HR",
@@ -299,9 +367,9 @@ function scoreHr(answersByCode, questionMeta, accumulator) {
       questionMeta.NP2_HR_Q001?.sectionTitle ||
       "Norme de performance 2 — Gestion des ressources humaines",
     pillar: "Social",
-    score: average(scores),
+    score: sectionScore,
     summary:
-      average(scores) >= 75
+      sectionScore >= 75
         ? "Les pratiques RH apparaissent globalement structurées."
         : "Les pratiques RH présentent plusieurs faiblesses de conformité ou d’encadrement.",
   });
@@ -444,16 +512,20 @@ function scoreMitigationSection(questionCode, detailCode, pillar, accumulator, q
 }
 
 function scoreClimate(answersByCode, questionMeta, accumulator) {
-  const score = calculateClimateScore(answersByCode);
+  const score = calculateClimateScore(answersByCode, accumulator.sector);
 
   if (isYes(answersByCode.CLIMATE_007)) {
-    accumulator.strengths.add("Conscience des enjeux climatiques déclarée.");
+    addInsight(accumulator.strengths, "Conscience des enjeux climatiques déclarée.", "CLIMATE_007");
   }
   if (isYes(answersByCode.CLIMATE_008)) {
-    accumulator.strengths.add("Plan de transition énergétique engagé.");
+    addInsight(accumulator.strengths, "Plan de transition énergétique engagé.", "CLIMATE_008");
   }
   if (isPlanned(answersByCode.CLIMATE_008)) {
-    accumulator.weaknesses.add("Plan de transition énergétique encore au stade de projet.");
+    addInsight(
+      accumulator.weaknesses,
+      "Plan de transition énergétique encore au stade de projet.",
+      "CLIMATE_008"
+    );
   }
 
   addSection(accumulator, {
@@ -468,9 +540,10 @@ function scoreClimate(answersByCode, questionMeta, accumulator) {
   });
 }
 
-function calculatePillars(answersByCode, questionMeta) {
+function calculatePillars(answersByCode, questionMeta, detectedSector) {
   const accumulator = createAccumulator();
   accumulator.answersByCode = answersByCode;
+  accumulator.sector = detectedSector || "Autre";
 
   scoreRegulatory(answersByCode, questionMeta, accumulator);
   scoreCertifications(answersByCode, questionMeta, accumulator);
@@ -494,9 +567,15 @@ function calculatePillars(answersByCode, questionMeta) {
     environmentScore: roundScore(average(accumulator.environmentScores)),
     socialScore: roundScore(average(accumulator.socialScores)),
     governanceScore: roundScore(average(accumulator.governanceScores)),
-    strengths: Array.from(accumulator.strengths),
-    weaknesses: Array.from(accumulator.weaknesses),
-    sectionBreakdown: accumulator.sectionBreakdown,
+    strengths: accumulator.strengths,
+    weaknesses: accumulator.weaknesses,
+    sectionBreakdown: Array.from(accumulator.sectionBreakdown.values()).map((item) => ({
+      sectionCode: item.sectionCode,
+      sectionTitle: item.sectionTitle,
+      pillar: item.pillar,
+      score: roundScore(average(item.scores)),
+      summary: Array.from(item.summaries).join(" "),
+    })),
   };
 }
 

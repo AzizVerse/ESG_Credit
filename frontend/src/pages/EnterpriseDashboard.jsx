@@ -49,14 +49,22 @@ function EnterpriseDashboard() {
     ];
   }, [applications]);
 
+  const existingApplication = applications[0] || null;
+
   return (
     <Layout
       title="Tableau de bord entreprise"
-      subtitle="Consultez vos demandes et poursuivez l’évaluation SGES de vos projets."
+      subtitle="Consultez votre demande et poursuivez l’évaluation SGES de votre projet."
       actions={
-        <Link to="/enterprise/new" className="primary-button">
-          Nouvelle demande
-        </Link>
+        existingApplication ? (
+          <Link to={`/enterprise/applications/${existingApplication.id}`} className="primary-button">
+            {existingApplication.status === "DRAFT" ? "Continuer ma demande" : "Ouvrir ma demande"}
+          </Link>
+        ) : (
+          <Link to="/enterprise/new" className="primary-button">
+            Créer une demande
+          </Link>
+        )
       }
     >
       <section className="stack">
@@ -84,7 +92,15 @@ function EnterpriseDashboard() {
 
           {!loading ? (
             <div className="table-wrapper">
-              <table className="data-table">
+              <table className="data-table admin-table">
+                <colgroup>
+                  <col style={{ width: "26%" }} />
+                  <col style={{ width: "12%" }} />
+                  <col style={{ width: "20%" }} />
+                  <col style={{ width: "14%" }} />
+                  <col style={{ width: "14%" }} />
+                  <col style={{ width: "14%" }} />
+                </colgroup>
                 <thead>
                   <tr>
                     <th>Nom du projet</th>
@@ -98,16 +114,20 @@ function EnterpriseDashboard() {
                 <tbody>
                   {applications.map((application) => (
                     <tr key={application.id}>
-                      <td>{application.projectName}</td>
+                      <td className="cell-wrap cell-clamp-2" title={application.projectName}>
+                        {application.projectName}
+                      </td>
                       <td>
                         <span className={`status-badge status-${application.status?.toLowerCase()}`}>
                           {application.status}
                         </span>
                       </td>
-                      <td>{application.projectType || "-"}</td>
-                      <td>{application.financingAmount ?? "-"}</td>
+                      <td className="cell-wrap cell-clamp-2" title={application.projectType || "-"}>
+                        {application.projectType || "-"}
+                      </td>
+                      <td className="numeric-cell">{application.financingAmount ?? "-"}</td>
                       <td>{new Date(application.createdAt).toLocaleDateString("fr-FR")}</td>
-                      <td>
+                      <td className="table-action-cell">
                         <Link
                           to={`/enterprise/applications/${application.id}`}
                           className="ghost-button"

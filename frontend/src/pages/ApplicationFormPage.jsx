@@ -849,7 +849,7 @@ function ApplicationFormPage() {
                   onClick={() => setActiveSectionIndex(index)}
                 >
                   <span className="section-nav-index">{index + 1}</span>
-                  <span>{section.title}</span>
+                  <span className="section-nav-label">{section.title}</span>
                 </button>
               ))}
             </div>

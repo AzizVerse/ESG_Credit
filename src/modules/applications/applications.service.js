@@ -90,6 +90,13 @@ function getApplicationInclude() {
   };
 }
 
+function getAdminApplicationInclude() {
+  return {
+    ...getApplicationInclude(),
+    esgAssessmentResult: true,
+  };
+}
+
 function toApplicationResponse(application) {
   if (!application?.projectProfile) {
     return application;
@@ -165,6 +172,18 @@ async function createApplication(user, data) {
   }
 
   const companyId = await getEnterpriseCompanyId(user);
+  const existingApplication = await prisma.application.findFirst({
+    where: { companyId },
+    select: { id: true },
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (existingApplication) {
+    throw new ApiError("Une demande SGES existe déjà pour cette entreprise.", 409, {
+      applicationId: existingApplication.id,
+    });
+  }
+
   const payload = getApplicationPayload(data);
 
   validateApplicationPayload(payload);
@@ -286,7 +305,7 @@ async function submitApplication(user, applicationId) {
 
 async function getAllApplications() {
   const applications = await prisma.application.findMany({
-    include: getApplicationInclude(),
+    include: getAdminApplicationInclude(),
     orderBy: { createdAt: "desc" },
   });
 
@@ -296,7 +315,7 @@ async function getAllApplications() {
 async function getApplicationById(applicationId) {
   const application = await prisma.application.findUnique({
     where: { id: applicationId },
-    include: getApplicationInclude(),
+    include: getAdminApplicationInclude(),
   });
 
   if (!application) {

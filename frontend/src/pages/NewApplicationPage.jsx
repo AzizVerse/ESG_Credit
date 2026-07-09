@@ -1,8 +1,18 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 
 import api from "../api/client";
 import Layout from "../components/Layout";
+
+const SUPPORTED_SECTORS = [
+  "Services bancaires / FI",
+  "Industrie lourde",
+  "Textile",
+  "Agroalimentaire",
+  "BTP / construction",
+  "Transport",
+  "Autre",
+];
 
 const initialForm = {
   legalName: "",
@@ -26,6 +36,8 @@ function NewApplicationPage() {
   const [files, setFiles] = useState([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [checkingExisting, setCheckingExisting] = useState(true);
+  const [existingApplication, setExistingApplication] = useState(null);
 
   function getEnterpriseErrorMessage(requestError) {
     const message =
@@ -35,6 +47,20 @@ function NewApplicationPage() {
       : message || "Création de la demande impossible.";
   }
 
+  useEffect(() => {
+    async function loadExistingApplication() {
+      try {
+        const response = await api.get("/applications/my");
+        setExistingApplication((response.data.data || [])[0] || null);
+      } catch (requestError) {
+        setError(getEnterpriseErrorMessage(requestError));
+      } finally {
+        setCheckingExisting(false);
+      }
+    }
+
+    loadExistingApplication();
+  }, []);
   function handleChange(event) {
     setForm((current) => ({
       ...current,
@@ -83,10 +109,40 @@ function NewApplicationPage() {
 
       navigate(`/enterprise/applications/${applicationId}`, { replace: true });
     } catch (requestError) {
+      const existingId = requestError.response?.data?.details?.applicationId;
+      if (existingId) {
+        setExistingApplication({ id: existingId });
+      }
       setError(getEnterpriseErrorMessage(requestError));
     } finally {
       setLoading(false);
     }
+  }
+
+  if (checkingExisting) {
+    return (
+      <Layout title="Créer une demande" subtitle="Vérification de votre dossier SGES.">
+        <section className="panel stack">
+          <p className="muted-text">Vérification de la demande existante...</p>
+        </section>
+      </Layout>
+    );
+  }
+
+  if (existingApplication) {
+    return (
+      <Layout title="Créer une demande" subtitle="Une seule demande SGES est autorisée par entreprise.">
+        <section className="panel stack">
+          <h3>Demande déjà existante</h3>
+          <p className="muted-text">Une demande SGES existe déjà pour votre entreprise.</p>
+          <div className="action-row">
+            <Link to={`/enterprise/applications/${existingApplication.id}`} className="primary-button">
+              Ouvrir ma demande
+            </Link>
+          </div>
+        </section>
+      </Layout>
+    );
   }
 
   return (
@@ -115,8 +171,19 @@ function NewApplicationPage() {
                 name="activitySector"
                 value={form.activitySector}
                 onChange={handleChange}
+                list="supported-sectors"
+                placeholder="Ex. Industrie lourde, Textile, Transport..."
                 required
               />
+              <datalist id="supported-sectors">
+                {SUPPORTED_SECTORS.map((sector) => (
+                  <option key={sector} value={sector} />
+                ))}
+              </datalist>
+              <small className="muted-text">
+                Secteurs supportés : Services bancaires / FI, Industrie lourde, Textile,
+                Agroalimentaire, BTP / construction, Transport ou Autre.
+              </small>
             </label>
             <label className="field">
               <span>Descriptif du projet</span>
