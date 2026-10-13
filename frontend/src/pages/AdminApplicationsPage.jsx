@@ -1,11 +1,17 @@
+import { useCollection, CollectionControls, CollectionPagination, normalizeSearch } from "../components/CollectionControls";
+import { t } from "../i18n/french";
+import { screeningLabel } from "../components/ExclusionScreening";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import api from "../api/client";
 import Layout from "../components/Layout";
+import { useScoringCalculation } from "../context/ScoringActionsContext";
+
+const ESMS_CATEGORIES = ["A", "B+", "B", "C", "FI"];
 
 const SUPPORTED_SECTORS = [
-  "Services bancaires / FI",
+  "Technology",
   "Industrie lourde",
   "Textile",
   "Agroalimentaire",
@@ -27,7 +33,7 @@ function getStatusLabel(status) {
 }
 
 function formatScore(value) {
-  return typeof value === "number" ? value.toFixed(2) : "-";
+  return typeof value === "number" ? value.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-";
 }
 
 function formatAmount(value) {
@@ -54,6 +60,7 @@ function normalizeCategoryClass(value) {
 }
 
 function AdminApplicationsPage() {
+  const calculate = useScoringCalculation();
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -89,17 +96,7 @@ function AdminApplicationsPage() {
     load();
   }, []);
 
-  const categoryOptions = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          applications
-            .map((application) => application.esgAssessmentResult?.categoryAuto || application.categoryAuto)
-            .filter(Boolean)
-        )
-      ).sort((a, b) => a.localeCompare(b, "fr")),
-    [applications]
-  );
+  const categoryOptions = ESMS_CATEGORIES;
 
   const riskOptions = useMemo(
     () =>
@@ -113,18 +110,18 @@ function AdminApplicationsPage() {
     [applications]
   );
 
-  const sectorOptions = SUPPORTED_SECTORS;
+  const sectorOptions = Array.from(new Set([...SUPPORTED_SECTORS, ...applications.map((application) => application.esgAssessmentResult?.sectorWeights?.sector || application.sector).filter(Boolean)])).sort();
 
   const filteredApplications = useMemo(() => {
-    const search = filters.search.trim().toLowerCase();
+    const search = normalizeSearch(filters.search.trim());
 
     return applications.filter((application) => {
       const companyName = application.company?.name || "";
       const projectName = application.projectName || "";
       const category = application.esgAssessmentResult?.categoryAuto || application.categoryAuto || "";
       const riskLevel = application.esgAssessmentResult?.riskLevel || "";
-      const sector = application.esgAssessmentResult?.sectorWeights?.sector || "";
-      const haystack = `${companyName} ${projectName}`.toLowerCase();
+      const sector = application.esgAssessmentResult?.sectorWeights?.sector || application.sector || "";
+      const haystack = normalizeSearch(`${companyName} ${projectName} ${application.id} ${application.projectType || ""} ${application.location || ""}`);
 
       return (
         (!filters.status || application.status === filters.status) &&
@@ -135,6 +132,8 @@ function AdminApplicationsPage() {
       );
     });
   }, [applications, filters]);
+
+  const collection = useCollection(filteredApplications, JSON.stringify(filters));
 
   function handleFilterChange(event) {
     setFilters((current) => ({
@@ -147,7 +146,8 @@ function AdminApplicationsPage() {
     try {
       setCalculatingId(applicationId);
       setActionMessage("");
-      await api.post(`/scoring/applications/${applicationId}/calculate`);
+      const response = await calculate({ mode: "single", applicationId });
+      if (!response) return;
       await loadApplications();
       setActionMessage("Bilan ESG calculé avec succès.");
     } catch (requestError) {
@@ -162,7 +162,7 @@ function AdminApplicationsPage() {
   return (
     <Layout
       title="Demandes ESG"
-      subtitle="Vue opérationnelle des dossiers, des résultats ESG calculés et des actions d’examen."
+      subtitle="Manage applications, assessment results and review actions."
       actions={
         <Link to="/admin" className="ghost-button">
           Retour au tableau de bord
@@ -172,7 +172,7 @@ function AdminApplicationsPage() {
       <section className="panel stack">
         <div className="section-header">
           <div>
-            <h3>Liste des demandes</h3>
+            <h3>Nombre de demandes</h3>
             <p className="muted-text">
               Filtrez par statut, catégorie, risque, secteur ou recherche libre.
             </p>
@@ -183,17 +183,17 @@ function AdminApplicationsPage() {
           <label className="field">
             <span>Recherche</span>
             <input
-              name="search"
+              type="search" name="search"
               value={filters.search}
               onChange={handleFilterChange}
-              placeholder="Projet ou entreprise"
+              placeholder="Project, company, type or location"
             />
           </label>
 
           <label className="field">
             <span>Statut</span>
             <select name="status" value={filters.status} onChange={handleFilterChange}>
-              <option value="">Tous</option>
+              <option value="">Toutes</option>
               <option value="DRAFT">Brouillon</option>
               <option value="SUBMITTED">Soumise</option>
               <option value="UNDER_REVIEW">En revue</option>
@@ -208,7 +208,7 @@ function AdminApplicationsPage() {
               <option value="">Toutes</option>
               {categoryOptions.map((option) => (
                 <option key={option} value={option}>
-                  {option}
+                  {t(option)}
                 </option>
               ))}
             </select>
@@ -217,10 +217,10 @@ function AdminApplicationsPage() {
           <label className="field">
             <span>Niveau de risque</span>
             <select name="riskLevel" value={filters.riskLevel} onChange={handleFilterChange}>
-              <option value="">Tous</option>
+              <option value="">Toutes</option>
               {riskOptions.map((option) => (
                 <option key={option} value={option}>
-                  {option}
+                  {t(option)}
                 </option>
               ))}
             </select>
@@ -229,23 +229,25 @@ function AdminApplicationsPage() {
           <label className="field">
             <span>Secteur</span>
             <select name="sector" value={filters.sector} onChange={handleFilterChange}>
-              <option value="">Tous</option>
+              <option value="">Toutes</option>
               {sectorOptions.map((option) => (
                 <option key={option} value={option}>
-                  {option}
+                  {t(option)}
                 </option>
               ))}
             </select>
           </label>
         </div>
 
-        {actionMessage ? <p className="muted-text">{actionMessage}</p> : null}
-        {loading ? <p className="muted-text">Chargement des demandes...</p> : null}
-        {error ? <p className="error-text">{error}</p> : null}
+        {!loading && !error ? <CollectionControls collection={collection} total={applications.length} active={Object.values(filters).some(Boolean)} onReset={() => setFilters({ search: "", status: "", category: "", riskLevel: "", sector: "" })} /> : null}
 
-        {!loading ? (
-          <div className="applications-card-list applications-card-list-visible">
-            {filteredApplications.map((application) => {
+        {actionMessage ? <p className="muted-text">{t(actionMessage)}</p> : null}
+        {loading ? <p className="muted-text">Chargement des demandes...</p> : null}
+        {error ? <p className="error-text">{t(error)}</p> : null}
+
+        {!loading && !error ? (
+          <div className="applications-card-list applications-card-list-visible data-scroll" tabIndex={0} role="region" aria-label="Résultats des demandes ESG">
+            {collection.rows.map((application) => {
               const result = application.esgAssessmentResult;
               const sector = result?.sectorWeights?.sector || "-";
               const category = result?.categoryAuto || application.categoryAuto || "-";
@@ -262,8 +264,9 @@ function AdminApplicationsPage() {
                       </p>
                     </div>
                     <div className="action-row">
+                      <span className="status-badge">{application.status === "REJECTED" && application.exclusionScreening?.outcome === "EXCLUDED" ? "Refusée automatiquement" : screeningLabel(application.exclusionScreening?.outcome)}</span>
                       <span className={`status-badge status-${application.status?.toLowerCase()}`}>
-                        {getStatusLabel(application.status)}
+                        {t(getStatusLabel(application.status))}
                       </span>
                     </div>
                   </div>
@@ -272,14 +275,14 @@ function AdminApplicationsPage() {
                     <div className="metric-row">
                       <span className="muted-text">Catégorie SGES</span>
                       <span className={`esg-badge category-badge esg-category-${normalizeCategoryClass(category)}`}>
-                        {category}
+                        {t(category)}
                       </span>
                     </div>
                     <div className="metric-row">
                       <span className="muted-text">Risque</span>
                       {result?.riskLevel ? (
                         <span className={`esg-badge risk-badge esg-risk-${normalizeRiskClass(result.riskLevel)}`}>
-                          {result.riskLevel}
+                          {t(result.riskLevel)}
                         </span>
                       ) : (
                         <span className="status-badge status-draft">Bilan non calculé</span>
@@ -292,7 +295,7 @@ function AdminApplicationsPage() {
                     <div className="metric-row">
                       <span className="muted-text">Type de projet</span>
                       <strong className="cell-clamp-2" title={application.projectType || "-"}>
-                        {application.projectType || "-"}
+                        {t(application.projectType || "-")}
                       </strong>
                     </div>
                     <div className="metric-row">
@@ -305,7 +308,7 @@ function AdminApplicationsPage() {
                     </div>
                     <div className="metric-row">
                       <span className="muted-text">Secteur</span>
-                      <strong className="cell-clamp-2" title={sector}>{sector}</strong>
+                      <strong className="cell-clamp-2" title={sector}>{t(sector)}</strong>
                     </div>
                   </div>
 
@@ -314,14 +317,14 @@ function AdminApplicationsPage() {
                       <Link to={`/admin/applications/${application.id}`} className="ghost-button">
                         Examiner
                       </Link>
-                      {!result ? (
+                      {!result && !["EXCLUDED", "REVIEW_REQUIRED"].includes(application.exclusionScreening?.outcome) && application.status !== "REJECTED" ? (
                         <button
                           type="button"
                           className="secondary-button"
                           disabled={calculatingId === application.id}
                           onClick={() => handleCalculate(application.id)}
                         >
-                          {calculatingId === application.id ? "Calcul..." : "Calculer"}
+                          {calculatingId === application.id ? "Calcul en cours..." : "Calculer"}
                         </button>
                       ) : null}
                     </div>
@@ -336,6 +339,7 @@ function AdminApplicationsPage() {
             ) : null}
           </div>
         ) : null}
+        {!loading && !error ? <CollectionPagination collection={collection} /> : null}
       </section>
     </Layout>
   );

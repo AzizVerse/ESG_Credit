@@ -7,20 +7,24 @@ const DEFAULT_WEIGHTS = {
 
 const SECTOR_RULES = [
   {
-    sector: "Services bancaires / FI",
+    sector: "Technology",
     keywords: [
-      "banque",
-      "bancaire",
-      "financ",
-      "fi",
-      "intermédiation",
-      "intermediaire financier",
-      "intermédiaire financier",
-      "crédit",
-      "credit",
-      "trade finance",
+      "technology",
+      "technologie",
+      "software",
+      "logiciel",
+      "informatique",
+      "numerique",
+      "it",
+      "ict",
+      "saas",
+      "cloud",
+      "datacenter",
+      "data center",
+      "telecom",
+      "digital services",
     ],
-    weights: { environment: 0.15, social: 0.3, governance: 0.55 },
+    weights: { environment: 0.25, social: 0.25, governance: 0.5 },
   },
   {
     sector: "Industrie lourde",
@@ -57,6 +61,13 @@ function normalize(value) {
 }
 
 function detectSector(application, profileDetails) {
+  const declaredSector = SECTOR_RULES.find((rule) =>
+    [profileDetails?.activitySector, application?.activityType].some(
+      (sector) => sector && normalize(sector).trim() === normalize(rule.sector)
+    )
+  );
+  if (declaredSector) return { sector: declaredSector.sector, ...declaredSector.weights };
+
   const haystack = normalize(
     [
       application?.activityType,
@@ -69,7 +80,11 @@ function detectSector(application, profileDetails) {
   );
 
   for (const rule of SECTOR_RULES) {
-    if (rule.keywords.some((keyword) => haystack.includes(normalize(keyword)))) {
+    if (rule.keywords.some((keyword) => {
+      const term = normalize(keyword);
+      // Short technology acronyms must be whole words, not parts of other words.
+      return term.length <= 3 ? haystack.split(/\W+/).includes(term) : haystack.includes(term);
+    })) {
       return {
         sector: rule.sector,
         ...rule.weights,
@@ -82,4 +97,8 @@ function detectSector(application, profileDetails) {
 
 module.exports = {
   detectSector,
+  getDefaultSectorWeights: () => [
+    ...SECTOR_RULES.map((rule) => ({ sector: rule.sector, ...rule.weights })),
+    { ...DEFAULT_WEIGHTS },
+  ],
 };

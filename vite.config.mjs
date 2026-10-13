@@ -5,4 +5,5 @@ import path from "node:path";
 export default defineConfig({
   root: path.resolve("frontend"),
   plugins: [react()],
+  server: { port: 5174, strictPort: true },
 });

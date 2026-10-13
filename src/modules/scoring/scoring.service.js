@@ -5,7 +5,7 @@ const { calculateCategory } = require("./scoring.category");
 const { calculatePillars } = require("./scoring.pillars");
 const { buildRedFlags } = require("./scoring.redFlags");
 const { buildRecommendations } = require("./scoring.recommendations");
-const { detectSector } = require("./scoring.sectorWeights");
+const { getSettings, resolveWeights, assessmentNeedsConfirmation, requireConfirmation } = require("./scoring.settings");
 const { roundScore } = require("./scoring.rules");
 
 const prisma = new PrismaClient();
@@ -245,13 +245,22 @@ async function loadAssessmentContext(applicationId) {
   return { application, formTemplate };
 }
 
-async function calculate(applicationId) {
+async function calculate(applicationId, options = {}, settingsSnapshot = null) {
+  const eligibility = await prisma.exclusionScreening.findUnique({ where: { applicationId } });
+  if (["EXCLUDED", "REVIEW_REQUIRED"].includes(eligibility?.outcome)) throw new ApiError("IFC eligibility screening prevents ESG calculation: " + eligibility.outcome, 409);
   const { application, formTemplate } = await loadAssessmentContext(applicationId);
   const profileDetails = parseProjectProfileDetails(application.projectProfile);
   const answersByCode = buildAnswersByCode(application.questionnaireAnswers || []);
   const questionMeta = buildQuestionMeta(formTemplate);
   const category = calculateCategory(answersByCode);
-  const sectorWeights = detectSector(application, profileDetails);
+  const settings = settingsSnapshot || getSettings();
+  const sectorWeights = resolveWeights(application, profileDetails, settings);
+  const previousResult = await prisma.eSGAssessmentResult.findUnique({ where: { applicationId } });
+  requireConfirmation({
+    settings,
+    options,
+    affectedCount: assessmentNeedsConfirmation(previousResult?.sectorWeights, sectorWeights) ? 1 : 0,
+  });
   const pillarResult = calculatePillars(answersByCode, questionMeta, sectorWeights.sector);
   const redFlags = buildRedFlags({
     answersByCode,
@@ -282,7 +291,10 @@ async function calculate(applicationId) {
     redFlags,
   });
 
-  const record = await prisma.eSGAssessmentResult.upsert({
+  const record = await prisma.$transaction(async tx => {
+  const currentEligibility = await tx.exclusionScreening.findUnique({ where: { applicationId } });
+  if (["EXCLUDED", "REVIEW_REQUIRED"].includes(currentEligibility?.outcome)) throw new ApiError("IFC eligibility screening prevents ESG calculation", 409);
+  const savedRecord = await tx.eSGAssessmentResult.upsert({
     where: { applicationId },
     update: {
       categoryAuto: category.categoryAuto,
@@ -319,13 +331,14 @@ async function calculate(applicationId) {
     },
   });
 
-  await prisma.application.update({
+  await tx.application.update({
     where: { id: applicationId },
     data: {
       categoryAuto: category.categoryAuto,
     },
   });
-
+  return savedRecord;
+  });
   return toResponse(record);
 }
 
@@ -456,7 +469,9 @@ async function getDashboardSummary() {
   };
 }
 
-async function calculateMissing() {
+async function calculateMissing(options = {}) {
+  const settings = getSettings();
+  requireConfirmation({ settings, options, affectedCount: 0 });
   const applications = await prisma.application.findMany({
     where: {
       status: {
@@ -482,7 +497,7 @@ async function calculateMissing() {
     }
 
     try {
-      await calculate(application.id);
+      await calculate(application.id, options, settings);
       calculated += 1;
     } catch (error) {
       errors.push({
@@ -501,22 +516,29 @@ async function calculateMissing() {
   };
 }
 
-async function recalculateAll() {
+async function recalculateAll(options = {}) {
+  const settings = getSettings();
   const applications = await prisma.application.findMany({
     where: {
       status: {
         in: [ApplicationStatus.SUBMITTED, ApplicationStatus.UNDER_REVIEW],
       },
     },
+    include: { projectProfile: true, esgAssessmentResult: true },
     orderBy: { createdAt: "asc" },
   });
 
+  const affectedCount = applications.filter((application) => assessmentNeedsConfirmation(
+    application.esgAssessmentResult?.sectorWeights,
+    resolveWeights(application, parseProjectProfileDetails(application.projectProfile), settings)
+  )).length;
+  requireConfirmation({ settings, options, affectedCount });
   let recalculated = 0;
   const errors = [];
 
   for (const application of applications) {
     try {
-      await calculate(application.id);
+      await calculate(application.id, options, settings);
       recalculated += 1;
     } catch (error) {
       errors.push({
@@ -534,10 +556,38 @@ async function recalculateAll() {
   };
 }
 
+async function getCalculationCheck({ applicationId, mode = "all" }) {
+  if (!["all", "missing", "single"].includes(mode) || (mode === "single" && !applicationId)) {
+    throw new ApiError("Invalid calculation scope.", 400);
+  }
+  const settings = getSettings();
+  const applications = await prisma.application.findMany({
+    where: mode === "single" ? { id: applicationId } : {
+      status: { in: [ApplicationStatus.SUBMITTED, ApplicationStatus.UNDER_REVIEW] },
+      ...(mode === "missing" ? { esgAssessmentResult: null } : {}),
+    },
+    include: { projectProfile: true, esgAssessmentResult: true },
+  });
+  if (mode === "single" && !applications.length) throw new ApiError("Application not found.", 404);
+  const affected = applications.filter((application) => assessmentNeedsConfirmation(
+    application.esgAssessmentResult?.sectorWeights,
+    resolveWeights(application, parseProjectProfileDetails(application.projectProfile), settings)
+  ));
+  return {
+    configurationVersion: settings.version,
+    configurationRevision: settings.revision,
+    requiresConfirmation: affected.length > 0,
+    affectedCount: affected.length,
+    totalApplications: applications.length,
+    changedSectors: [...new Set(affected.map((application) => resolveWeights(application, parseProjectProfileDetails(application.projectProfile), settings).sector))],
+  };
+}
+
 module.exports = {
   calculate,
   getByApplicationId,
   getDashboardSummary,
   calculateMissing,
   recalculateAll,
+  getCalculationCheck,
 };

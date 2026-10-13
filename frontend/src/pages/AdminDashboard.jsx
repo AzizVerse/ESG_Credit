@@ -1,3 +1,6 @@
+import { t } from "../i18n/french";
+import ExclusionOverview from "../components/ExclusionOverview";
+import { normalizeSearch } from "../components/CollectionControls";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -15,6 +18,8 @@ import {
 
 import api from "../api/client";
 import Layout from "../components/Layout";
+import SectorWeightSettings from "../components/SectorWeightSettings";
+import { useScoringCalculation } from "../context/ScoringActionsContext";
 
 const RISK_COLORS = {
   Faible: "#0d6a5f",
@@ -23,10 +28,10 @@ const RISK_COLORS = {
   "Élevé": "#b42318",
 };
 
-const CATEGORY_COLORS = ["#8f1d1d", "#c96a12", "#235b88", "#0d6a5f", "#45338d", "#6b7280"];
+const CATEGORY_COLORS = ["#8f1d1d", "#c96a12", "#235b88", "#0d6a5f", "#244856", "#6b7280"];
 
 function formatScore(value) {
-  return typeof value === "number" ? value.toFixed(2) : "-";
+  return typeof value === "number" ? value.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-";
 }
 
 function normalizeRiskClass(value) {
@@ -59,11 +64,14 @@ function getStatusLabel(status) {
 }
 
 function AdminDashboard() {
+  const calculate = useScoringCalculation();
   const [summary, setSummary] = useState(null);
+  const [listSearch, setListSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [actionLoading, setActionLoading] = useState("");
   const [actionMessage, setActionMessage] = useState("");
+  const [settingsEditing, setSettingsEditing] = useState(false);
 
   async function loadSummary() {
     const response = await api.get("/scoring/admin/dashboard-summary");
@@ -93,19 +101,20 @@ function AdminDashboard() {
     }
 
     return [
-      { label: "Total demandes", value: summary.totalApplications || 0 },
+      { label: "Nombre total de demandes", value: summary.totalApplications || 0 },
       { label: "Bilans ESG calculés", value: summary.totalCalculatedResults || 0 },
       { label: "Bilans manquants", value: summary.missingResults || 0 },
-      { label: "Risque élevé", value: summary.byRiskLevel?.["Élevé"] || 0 },
-      { label: "Risque substantiel", value: summary.byRiskLevel?.Substantiel || 0 },
-      { label: "Score ESG moyen", value: formatScore(summary.averageScores?.global) },
+      { label: "Risque élevé", value: summary.byRiskLevel?.["Élevé"] || 0, tone: "danger" },
+      { label: "Risque substantiel", value: summary.byRiskLevel?.Substantiel || 0, tone: "warning" },
+      { label: "Score ESG moyen", value: formatScore(summary.averageScores?.global), tone: "score", suffix: "/ 100" },
     ];
   }, [summary]);
 
   const riskData = useMemo(
     () =>
       Object.entries(summary?.byRiskLevel || {}).map(([name, value]) => ({
-        name,
+        name: t(name),
+        rawName: name,
         value,
       })),
     [summary]
@@ -114,7 +123,7 @@ function AdminDashboard() {
   const categoryData = useMemo(
     () =>
       Object.entries(summary?.byCategory || {}).map(([name, value]) => ({
-        name,
+        name: t(name),
         value,
       })),
     [summary]
@@ -133,7 +142,7 @@ function AdminDashboard() {
   const sectorData = useMemo(
     () =>
       Object.entries(summary?.bySector || {})
-        .map(([name, value]) => ({ name, value }))
+        .map(([name, value]) => ({ name: t(name), value }))
         .sort((left, right) => right.value - left.value),
     [summary]
   );
@@ -142,17 +151,14 @@ function AdminDashboard() {
     try {
       setActionLoading(type);
       setActionMessage("");
-      const endpoint =
-        type === "missing"
-          ? "/scoring/admin/calculate-missing"
-          : "/scoring/admin/recalculate-all";
-      const response = await api.post(endpoint);
+      const response = await calculate({ mode: type === "missing" ? "missing" : "all" });
+      if (!response) return;
       const data = response.data.data || {};
 
       if (type === "missing") {
-        setActionMessage(`${data.calculated || 0} bilans calculés avec succès.`);
+        setActionMessage(`${data.calculated || 0} bilan(s) calculé(s) avec succès.${data.errors?.length ? ` ${data.errors.length} échec(s).` : ""}`);
       } else {
-        setActionMessage(`${data.recalculated || 0} bilans recalculés avec succès.`);
+        setActionMessage(`${data.recalculated || 0} bilan(s) recalculé(s) avec succès.${data.errors?.length ? ` ${data.errors.length} échec(s).` : ""}`);
       }
 
       await loadSummary();
@@ -166,10 +172,14 @@ function AdminDashboard() {
     }
   }
 
+  const matchesListSearch = (application) => normalizeSearch(`${application.projectName || ""} ${application.companyName || ""}`).includes(normalizeSearch(listSearch.trim()));
+  const highRiskApplications = (summary?.highRiskApplications || []).filter(matchesListSearch);
+  const recentApplications = (summary?.recentApplications || []).filter(matchesListSearch);
+
   return (
     <Layout
       title="Tableau de bord"
-      subtitle="Vue exécutive des expositions ESG, des catégories SGES et des priorités de revue."
+      subtitle="An executive overview of ESG exposure, ESMS categories and review priorities."
       actions={
         <div className="topbar-actions">
           <Link to="/admin/applications" className="ghost-button">
@@ -186,7 +196,7 @@ function AdminDashboard() {
           <button
             type="button"
             className="secondary-button"
-            disabled={actionLoading === "missing"}
+            disabled={Boolean(actionLoading) || settingsEditing}
             onClick={() => handleBatchAction("missing")}
           >
             {actionLoading === "missing"
@@ -196,7 +206,7 @@ function AdminDashboard() {
           <button
             type="button"
             className="primary-button"
-            disabled={actionLoading === "all"}
+            disabled={Boolean(actionLoading) || settingsEditing}
             onClick={() => handleBatchAction("all")}
           >
             {actionLoading === "all"
@@ -205,21 +215,23 @@ function AdminDashboard() {
           </button>
         </div>
 
-        {actionMessage ? <p className="muted-text">{actionMessage}</p> : null}
+        {actionMessage ? <p className="muted-text">{t(actionMessage)}</p> : null}
         {loading ? <p className="muted-text">Chargement du tableau de bord...</p> : null}
-        {error ? <p className="error-text">{error}</p> : null}
+        {error ? <p className="error-text">{t(error)}</p> : null}
 
         {summary ? (
           <>
-            <div className="metric-grid metric-grid-admin">
+            <dl className="dashboard-kpi-strip" aria-label="Vue d’ensemble du portefeuille">
               {metrics.map((metric) => (
-                <article key={metric.label} className="metric-card">
-                  <p className="metric-label">{metric.label}</p>
-                  <strong className="metric-value">{metric.value}</strong>
-                </article>
+                <div key={metric.label} className={`dashboard-kpi-item dashboard-kpi-${metric.tone || "neutral"}`}>
+                  <dt>{t(metric.label)}</dt>
+                  <dd>{metric.value}{metric.suffix ? <span>{metric.suffix}</span> : null}</dd>
+                </div>
               ))}
-            </div>
+            </dl>
 
+            <SectorWeightSettings onEditingChange={setSettingsEditing} onSaved={() => setActionMessage("Pondérations sectorielles mises à jour. Recalculez les bilans pour actualiser les indicateurs du tableau de bord.")} />
+            <ExclusionOverview />
             <div className="dashboard-chart-grid">
               <article className="panel stack chart-card">
                 <div>
@@ -231,7 +243,7 @@ function AdminDashboard() {
                     <PieChart>
                       <Pie data={riskData} dataKey="value" nameKey="name" innerRadius={55} outerRadius={85}>
                         {riskData.map((entry) => (
-                          <Cell key={entry.name} fill={RISK_COLORS[entry.name] || "#6b7280"} />
+                          <Cell key={entry.name} fill={RISK_COLORS[entry.rawName] || "#6b7280"} />
                         ))}
                       </Pie>
                       <Tooltip />
@@ -274,7 +286,7 @@ function AdminDashboard() {
                       <XAxis dataKey="name" />
                       <YAxis domain={[0, 100]} />
                       <Tooltip />
-                      <Bar dataKey="value" fill="#123b5d" radius={[8, 8, 0, 0]} />
+                      <Bar dataKey="value" name="Score" fill="#244856" radius={[5, 5, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -292,13 +304,17 @@ function AdminDashboard() {
                       <XAxis type="number" allowDecimals={false} />
                       <YAxis type="category" dataKey="name" width={120} />
                       <Tooltip />
-                      <Bar dataKey="value" fill="#0f8f83" radius={[0, 8, 8, 0]} />
+                      <Bar dataKey="value" name="Applications" fill="#568669" radius={[0, 5, 5, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
               </article>
             </div>
 
+            <div className="collection-controls">
+              <label className="field"><span>Rechercher un dossier</span><input type="search" value={listSearch} onChange={(event) => setListSearch(event.target.value)} placeholder="Projet ou entreprise" /></label>
+              <button type="button" className="ghost-button" disabled={!listSearch} onClick={() => setListSearch("")}>Effacer la recherche</button>
+            </div>
             <div className="detail-grid analytics-grid">
               <section className="panel stack">
                 <div className="section-header">
@@ -308,11 +324,11 @@ function AdminDashboard() {
                   </div>
                 </div>
 
-                {!summary.highRiskApplications?.length ? (
-                  <p className="muted-text">Aucun dossier à risque prioritaire pour le moment.</p>
+                {!highRiskApplications.length ? (
+                  <p className="muted-text">{listSearch ? "Aucun dossier prioritaire ne correspond à votre recherche." : "Aucun dossier à risque prioritaire pour le moment."}</p>
                 ) : (
-                  <div className="admin-list-grid">
-                    {summary.highRiskApplications.map((application) => (
+                  <div className="admin-list-grid data-scroll" tabIndex={0} role="region" aria-label="Dossiers à risque élevé">
+                    {highRiskApplications.map((application) => (
                       <article key={application.id} className="admin-list-card">
                         <div className="admin-list-main">
                           <p className="eyebrow">Projet prioritaire</p>
@@ -327,19 +343,19 @@ function AdminDashboard() {
                           <div className="metric-row">
                             <span className="muted-text">Secteur</span>
                             <strong className="cell-clamp-2" title={application.sector || "-"}>
-                              {application.sector || "-"}
+                              {t(application.sector || "-")}
                             </strong>
                           </div>
                           <div className="metric-row">
                             <span className="muted-text">Catégorie</span>
                             <span className={`esg-badge category-badge esg-category-${normalizeCategoryClass(application.categoryAuto)}`}>
-                              {application.categoryAuto}
+                              {t(application.categoryAuto)}
                             </span>
                           </div>
                           <div className="metric-row">
                             <span className="muted-text">Risque</span>
                             <span className={`esg-badge risk-badge esg-risk-${normalizeRiskClass(application.riskLevel)}`}>
-                              {application.riskLevel}
+                              {t(application.riskLevel)}
                             </span>
                           </div>
                         </div>
@@ -365,11 +381,11 @@ function AdminDashboard() {
                   </div>
                 </div>
 
-                {!summary.recentApplications?.length ? (
-                  <p className="muted-text">Aucun dossier récent disponible.</p>
+                {!recentApplications.length ? (
+                  <p className="muted-text">Aucun dossier récent ne correspond à votre recherche.</p>
                 ) : (
-                  <div className="admin-list-grid admin-list-grid-compact">
-                    {summary.recentApplications.map((application) => (
+                  <div className="admin-list-grid admin-list-grid-compact data-scroll" tabIndex={0} role="region" aria-label="Dossiers récents">
+                    {recentApplications.map((application) => (
                       <article key={application.id} className="admin-list-card admin-list-card-compact">
                         <div className="admin-list-main">
                           <h4 className="application-card-title cell-clamp-2" title={application.projectName}>
@@ -385,16 +401,16 @@ function AdminDashboard() {
                         <div className="admin-list-meta">
                           <div className="action-row">
                             <span className={`status-badge status-${application.status?.toLowerCase()}`}>
-                              {getStatusLabel(application.status)}
+                              {t(getStatusLabel(application.status))}
                             </span>
                             <span className={`esg-badge category-badge esg-category-${normalizeCategoryClass(application.categoryAuto)}`}>
-                              {application.categoryAuto}
+                              {t(application.categoryAuto)}
                             </span>
                           </div>
                           <div className="action-row">
                             {application.riskLevel ? (
                               <span className={`esg-badge risk-badge esg-risk-${normalizeRiskClass(application.riskLevel)}`}>
-                                {application.riskLevel}
+                                {t(application.riskLevel)}
                               </span>
                             ) : (
                               <span className="status-badge status-draft">Bilan non calculé</span>

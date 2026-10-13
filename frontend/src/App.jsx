@@ -5,6 +5,7 @@ import AdminApplicationDetail from "./pages/AdminApplicationDetail";
 import AdminApplicationsPage from "./pages/AdminApplicationsPage";
 import AdminCreateEnterpriseAccountPage from "./pages/AdminCreateEnterpriseAccountPage";
 import AdminDashboard from "./pages/AdminDashboard";
+import AdminExclusionsPage from "./pages/AdminExclusionsPage";
 import AdminEnterpriseAccountDetailPage from "./pages/AdminEnterpriseAccountDetailPage";
 import AdminEnterpriseAccountsPage from "./pages/AdminEnterpriseAccountsPage";
 import ApplicationFormPage from "./pages/ApplicationFormPage";
@@ -30,6 +31,7 @@ function HomeRedirect() {
 function App() {
   return (
     <Routes>
+      <Route path="/admin/exclusions" element={<ProtectedRoute allowedRoles={["ADMIN"]}><AdminExclusionsPage /></ProtectedRoute>} />
       <Route path="/" element={<HomeRedirect />} />
       <Route path="/login" element={<LoginPage />} />
 

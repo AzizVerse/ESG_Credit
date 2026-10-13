@@ -1,8 +1,10 @@
+import { t } from "../i18n/french";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import api from "../api/client";
 import Layout from "../components/Layout";
+import ExclusionScreening from "../components/ExclusionScreening";
 
 const CATEGORY_CONFIG = [
   { prefix: "CAT_A_", title: "Catégorie A" },
@@ -315,7 +317,7 @@ function ApplicationFormPage() {
     try {
       const response = await api.post(`/applications/my/${id}/submit`);
       setApplication(response.data.data);
-      setStatusMessage("Demande soumise.");
+      setStatusMessage(response.data.data.status === "REJECTED" ? "Demande refusée automatiquement selon la politique d’exclusion IFC. Consultez les motifs du contrôle ci-dessus." : response.data.data.exclusionScreening?.outcome === "REVIEW_REQUIRED" ? "Demande transmise pour vérification de l’éligibilité. Le calcul du bilan ESG est suspendu." : "Demande soumise.");
     } catch (requestError) {
       setError(requestError.response?.data?.message || "Soumission de la demande impossible");
     } finally {
@@ -373,9 +375,9 @@ function ApplicationFormPage() {
 
     if (question.type === "BOOLEAN" || question.type === "SINGLE_CHOICE") {
       return (
-        <div className="button-row">
+        <div className="assessment-choices" role="radiogroup" aria-labelledby={`question-title-${question.code}`} aria-required={Boolean(question.isRequired)}>
           {options.map((option) => (
-            <label key={option.value} className="ghost-button">
+            <label key={option.value} className="assessment-choice">
               <input
                 type="radio"
                 name={question.code}
@@ -388,8 +390,8 @@ function ApplicationFormPage() {
                   })
                 }
                 disabled={!isDraft}
-              />{" "}
-              {option.label}
+              />
+              <span>{t(option.label)}</span>
             </label>
           ))}
         </div>
@@ -400,12 +402,12 @@ function ApplicationFormPage() {
       const selectedValues = parseMultipleChoiceAnswer(currentAnswer.answerValue);
 
       return (
-        <div className="stack">
+        <div className="assessment-choices assessment-choices-multiple" role="group" aria-labelledby={`question-title-${question.code}`}>
           {options.map((option) => {
             const checked = selectedValues.includes(option.value);
 
             return (
-              <label key={option.value} className="ghost-button">
+              <label key={option.value} className="assessment-choice">
                 <input
                   type="checkbox"
                   value={option.value}
@@ -424,8 +426,8 @@ function ApplicationFormPage() {
                     });
                   }}
                   disabled={!isDraft}
-                />{" "}
-                {option.label}
+                />
+                <span>{t(option.label)}</span>
               </label>
             );
           })}
@@ -520,14 +522,14 @@ function ApplicationFormPage() {
 
     return (
       <article key={question.code} className="data-card">
-        <h3>{question.label}</h3>
-        {question.helpText ? <p className="muted-text">{question.helpText}</p> : null}
-        <table>
+        <h3>{t(question.label)}</h3>
+        {question.helpText ? <p className="muted-text">{t(question.helpText)}</p> : null}
+        <div className="table-wrapper" tabIndex={0} role="region" aria-label={t(question.label)}><table>
           <thead>
             <tr>
               {rows[0] && Object.prototype.hasOwnProperty.call(rows[0], "label") ? <th>Ligne</th> : null}
               {columns.map((column) => (
-                <th key={column.key}>{column.label}</th>
+                <th key={column.key}>{t(column.label)}</th>
               ))}
               {allowAddRows ? <th>Action</th> : null}
             </tr>
@@ -535,7 +537,7 @@ function ApplicationFormPage() {
           <tbody>
             {rows.map((row, rowIndex) => (
               <tr key={`${question.code}-${rowIndex}`}>
-                {Object.prototype.hasOwnProperty.call(row, "label") ? <td>{row.label}</td> : null}
+                {Object.prototype.hasOwnProperty.call(row, "label") ? <td>{t(row.label)}</td> : null}
                 {columns.map((column) => (
                   <td key={column.key}>
                     {column.type === "choice" ? (
@@ -556,7 +558,7 @@ function ApplicationFormPage() {
                         <option value="">-</option>
                         {(column.options || []).map((option) => (
                           <option key={option.value} value={option.value}>
-                            {option.label}
+                            {t(option.label)}
                           </option>
                         ))}
                       </select>
@@ -596,7 +598,7 @@ function ApplicationFormPage() {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
         {allowAddRows ? (
           <button
             type="button"
@@ -626,15 +628,18 @@ function ApplicationFormPage() {
     const isDraft = application?.status === "DRAFT";
 
     return (
-      <article key={question.code} className="question-card">
-        <h3>{question.label}</h3>
-        {question.helpText ? <p className="muted-text">{question.helpText}</p> : null}
+      <article key={question.code} className="question-card assessment-question">
+        <div className="assessment-question-heading">
+          <h3 id={`question-title-${question.code}`}>{t(question.label)}</h3>
+          {question.isRequired ? <span className="assessment-required">Obligatoire</span> : null}
+        </div>
+        {question.helpText ? <p className="muted-text">{t(question.helpText)}</p> : null}
         {renderInputByType(section, question, currentAnswer, isDraft)}
         {question.hasComment ? (
-          <label className="field">
-            <span>Commentaire</span>
+          <label className="field assessment-comment">
+            <span>Commentaire <small>Facultatif</small></span>
             <textarea
-              rows="3"
+              rows="2"
               value={currentAnswer.comment}
               onChange={(event) =>
                 handleAnswerChange(section.code, question.code, {
@@ -692,7 +697,7 @@ function ApplicationFormPage() {
         {effectifQuestions.length ? (
           <article className="data-card">
             <h3>1 — Effectifs</h3>
-            <table>
+            <div className="table-wrapper" tabIndex={0} role="region" aria-label="Tableau des effectifs"><table>
               <thead>
                 <tr>
                   <th>Catégorie</th>
@@ -703,14 +708,14 @@ function ApplicationFormPage() {
               <tbody>
                 {HR_EFFECTIFS_GROUP_1.map(([label, menCode, womenCode]) => (
                   <tr key={label}>
-                    <td>{label}</td>
+                    <td>{t(label)}</td>
                     <td>{renderNumberCell(section.code, menCode)}</td>
                     <td>{renderNumberCell(section.code, womenCode)}</td>
                   </tr>
                 ))}
               </tbody>
-            </table>
-            <table>
+            </table></div>
+            <div className="table-wrapper" tabIndex={0} role="region" aria-label="Tableau des catégories de personnel"><table>
               <thead>
                 <tr>
                   <th>Type</th>
@@ -721,13 +726,13 @@ function ApplicationFormPage() {
               <tbody>
                 {HR_EFFECTIFS_GROUP_2.map(([label, menCode, womenCode]) => (
                   <tr key={label}>
-                    <td>{label}</td>
+                    <td>{t(label)}</td>
                     <td>{renderNumberCell(section.code, menCode)}</td>
                     <td>{renderNumberCell(section.code, womenCode)}</td>
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           </article>
         ) : null}
 
@@ -778,7 +783,7 @@ function ApplicationFormPage() {
     return (
       <article className="data-card">
         <h3>Pièces justificatives</h3>
-        <p className="muted-text">{helperText}</p>
+        <p className="muted-text">{t(helperText)}</p>
 
         <label className="field">
           <span>Pièces justificatives</span>
@@ -791,7 +796,7 @@ function ApplicationFormPage() {
         </label>
 
         {sectionAttachments.length ? (
-          <div className="stack">
+          <div className="stack data-scroll" tabIndex={0} role="region" aria-label="Pièces justificatives">
             {sectionAttachments.map((attachment) => (
               <div key={attachment.id} className="answer-row">
                 <p>{attachment.originalName || attachment.fileName}</p>
@@ -808,23 +813,24 @@ function ApplicationFormPage() {
   return (
     <Layout
       title="Évaluation SGES"
-      subtitle="Vous pouvez enregistrer vos réponses à tout moment et revenir plus tard."
+      subtitle="Save your answers at any time and continue later."
     >
+      {application ? <ExclusionScreening application={application} /> : null}
       <section className="panel">
         {loading ? <p className="muted-text">Chargement de la demande...</p> : null}
-        {error ? <p className="error-text">{error}</p> : null}
+        {error ? <p className="error-text">{t(error)}</p> : null}
 
         {application && activeSection ? (
           <>
             <div className="section-header">
               <div>
                 <h2>{application.projectName}</h2>
-                <p className="muted-text">{application.projectType}</p>
+                <p className="muted-text">{t(application.projectType)}</p>
                 <p className="muted-text">
                   Section {activeSectionIndex + 1} / {sections.length}
                 </p>
               </div>
-              <span className="status-pill">{application.status}</span>
+              <span className="status-pill">{t(application.status)}</span>
             </div>
 
             <div className="progress-track" aria-hidden="true">
@@ -836,7 +842,7 @@ function ApplicationFormPage() {
               />
             </div>
 
-            <div className="section-nav-grid">
+            <div className="section-nav-grid" tabIndex={0} role="region" aria-label="Sections du questionnaire">
               {sections.map((section, index) => (
                 <button
                   key={section.id}
@@ -849,7 +855,7 @@ function ApplicationFormPage() {
                   onClick={() => setActiveSectionIndex(index)}
                 >
                   <span className="section-nav-index">{index + 1}</span>
-                  <span className="section-nav-label">{section.title}</span>
+                  <span className="section-nav-label">{t(section.title)}</span>
                 </button>
               ))}
             </div>
@@ -857,10 +863,10 @@ function ApplicationFormPage() {
             <div className="stack">
               <section className="stack">
                 <div>
-                  <h3>{activeSection.title}</h3>
+                  <h3>{t(activeSection.title)}</h3>
                   {activeSection.description ? (
                     <p className="muted-text" style={{ whiteSpace: "pre-line" }}>
-                      {activeSection.description}
+                      {t(activeSection.description)}
                     </p>
                   ) : null}
                 </div>
@@ -873,7 +879,7 @@ function ApplicationFormPage() {
                           className="ghost-button"
                           onClick={() => toggleGroup(group.prefix)}
                         >
-                          {expandedGroups[group.prefix] ? "Masquer" : "Afficher"} {group.title}
+                          {expandedGroups[group.prefix] ? "Masquer" : "Afficher"} {t(group.title)}
                         </button>
                         {expandedGroups[group.prefix]
                           ? group.questions.map((question) => renderQuestion(activeSection, question))
@@ -890,7 +896,7 @@ function ApplicationFormPage() {
               </section>
             </div>
 
-            {statusMessage ? <p className="success-text">{statusMessage}</p> : null}
+            {statusMessage ? <p className="success-text">{t(statusMessage)}</p> : null}
 
             <div className="button-row">
               <button

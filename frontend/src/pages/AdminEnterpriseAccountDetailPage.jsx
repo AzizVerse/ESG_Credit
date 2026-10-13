@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { useCollection, CollectionControls, CollectionPagination, ApplicationFilters, filterApplications } from "../components/CollectionControls";
+import { t } from "../i18n/french";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import api from "../api/client";
@@ -19,6 +21,8 @@ function getStatusLabel(status) {
 function AdminEnterpriseAccountDetailPage() {
   const { id } = useParams();
   const [account, setAccount] = useState(null);
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -40,10 +44,13 @@ function AdminEnterpriseAccountDetailPage() {
     loadAccount();
   }, [id]);
 
+  const filtered = useMemo(() => filterApplications(account?.applications || [], search, status), [account, search, status]);
+  const collection = useCollection(filtered, JSON.stringify([search, status, id]));
+
   return (
     <Layout
       title="Détail du compte entreprise"
-      subtitle="Consultez les informations du compte et les demandes associées."
+      subtitle="View account details and the associated application."
       actions={
         <Link to="/admin/enterprise-accounts" className="ghost-button">
           Retour à la liste
@@ -52,7 +59,7 @@ function AdminEnterpriseAccountDetailPage() {
     >
       <section className="stack">
         {loading ? <p className="muted-text">Chargement du compte...</p> : null}
-        {error ? <p className="error-text">{error}</p> : null}
+        {error ? <p className="error-text">{t(error)}</p> : null}
 
         {account ? (
           <>
@@ -60,7 +67,7 @@ function AdminEnterpriseAccountDetailPage() {
               <article className="panel stack">
                 <h3>Informations du compte</h3>
                 <div className="summary-row">
-                  <span>Email</span>
+                  <span>Adresse e-mail</span>
                   <strong>{account.email}</strong>
                 </div>
                 <div className="summary-row">
@@ -88,7 +95,9 @@ function AdminEnterpriseAccountDetailPage() {
                 </div>
               </div>
 
-              <div className="table-wrapper">
+              <ApplicationFilters search={search} status={status} onSearch={setSearch} onStatus={setStatus} />
+              <CollectionControls collection={collection} total={(account?.applications || []).length} active={Boolean(search || status)} onReset={() => { setSearch(""); setStatus(""); }} />
+              <div className="table-wrapper" tabIndex={0} role="region" aria-label="Résultats des demandes">
                 <table className="data-table admin-table">
                   <colgroup>
                     <col style={{ width: "20%" }} />
@@ -111,18 +120,18 @@ function AdminEnterpriseAccountDetailPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {(account.applications || []).map((application) => (
+                    {collection.rows.map((application) => (
                       <tr key={application.id}>
                         <td className="cell-wrap cell-clamp-2" title={application.projectName}>
                           {application.projectName}
                         </td>
                         <td>
                           <span className={`status-badge status-${application.status?.toLowerCase()}`}>
-                            {getStatusLabel(application.status)}
+                            {t(getStatusLabel(application.status))}
                           </span>
                         </td>
                         <td className="cell-wrap cell-clamp-2" title={application.projectType || "-"}>
-                          {application.projectType || "-"}
+                          {t(application.projectType || "-")}
                         </td>
                         <td className="numeric-cell">{application.financingAmount ?? "-"}</td>
                         <td className="cell-wrap cell-clamp-2" title={application.location || "-"}>
@@ -139,16 +148,17 @@ function AdminEnterpriseAccountDetailPage() {
                         </td>
                       </tr>
                     ))}
-                    {!account.applications?.length ? (
+                    {!collection.total ? (
                       <tr>
                         <td colSpan="7" className="empty-cell">
-                          Aucune demande liée à cette entreprise.
+                          Aucune demande ne correspond à vos filtres.
                         </td>
                       </tr>
                     ) : null}
                   </tbody>
                 </table>
               </div>
+              <CollectionPagination collection={collection} />
             </section>
           </>
         ) : null}

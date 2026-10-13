@@ -38,6 +38,7 @@ app.use("/api", attachmentsRoutes);
 app.use("/api/forms", formsRoutes);
 app.use("/api", questionnaireRoutes);
 app.use("/api/scoring", scoringRoutes);
+app.use("/api/exclusions", require("./modules/exclusions/exclusions.routes"));
 app.use("/api/reviews", reviewsRoutes);
 app.use("/api/decisions", decisionsRoutes);
 

@@ -1,3 +1,5 @@
+import { useCollection, CollectionControls, CollectionPagination, normalizeSearch } from "../components/CollectionControls";
+import { t } from "../i18n/french";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -6,6 +8,7 @@ import Layout from "../components/Layout";
 
 function AdminEnterpriseAccountsPage() {
   const [accounts, setAccounts] = useState([]);
+  const [activity, setActivity] = useState("");
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -29,26 +32,18 @@ function AdminEnterpriseAccountsPage() {
   }, []);
 
   const filteredAccounts = useMemo(() => {
-    const term = search.trim().toLowerCase();
-
-    if (!term) {
-      return accounts;
-    }
-
-    return accounts.filter((account) => {
-      const email = String(account.email || "").toLowerCase();
-      const companyName = String(account.companyName || "").toLowerCase();
-      return email.includes(term) || companyName.includes(term);
-    });
-  }, [accounts, search]);
+    const term = normalizeSearch(search.trim());
+    return accounts.filter((account) => normalizeSearch(`${account.email || ""} ${account.companyName || ""}`).includes(term) && (!activity || (activity === "with" ? Number(account.applicationsCount || 0) > 0 : Number(account.applicationsCount || 0) === 0)));
+  }, [accounts, search, activity]);
+  const collection = useCollection(filteredAccounts, JSON.stringify([search, activity]));
 
   return (
     <Layout
-      title="Comptes entreprises"
-      subtitle="Liste des comptes entreprises créés pour l’évaluation SGES."
+      title="Liste des comptes entreprises"
+      subtitle="Company accounts registered for ESMS assessment."
       actions={
         <Link to="/admin/enterprise-accounts/new" className="primary-button">
-          Créer un compte
+          Créer le compte
         </Link>
       }
     >
@@ -62,7 +57,7 @@ function AdminEnterpriseAccountsPage() {
           </div>
           <label className="field filter-field">
             <span>Recherche</span>
-            <input
+            <input type="search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Email ou entreprise"
@@ -70,11 +65,13 @@ function AdminEnterpriseAccountsPage() {
           </label>
         </div>
 
+        <label className="field filter-field"><span>Présence d’une demande</span><select value={activity} onChange={(event) => setActivity(event.target.value)}><option value="">Tous les comptes</option><option value="with">Avec une demande</option><option value="without">Sans demande</option></select></label>
+        {!loading && !error ? <CollectionControls collection={collection} total={accounts.length} active={Boolean(search || activity)} onReset={() => { setSearch(""); setActivity(""); }} /> : null}
         {loading ? <p className="muted-text">Chargement des comptes...</p> : null}
-        {error ? <p className="error-text">{error}</p> : null}
+        {error ? <p className="error-text">{t(error)}</p> : null}
 
-        {!loading ? (
-          <div className="table-wrapper">
+        {!loading && !error ? (
+          <div className="table-wrapper" tabIndex={0} role="region" aria-label="Résultats des comptes entreprises">
             <table className="data-table admin-table">
               <colgroup>
                 <col style={{ width: "28%" }} />
@@ -85,7 +82,7 @@ function AdminEnterpriseAccountsPage() {
               </colgroup>
               <thead>
                 <tr>
-                  <th>Email</th>
+                  <th>Adresse e-mail</th>
                   <th>Entreprise</th>
                   <th>Nombre de demandes</th>
                   <th>Date de création</th>
@@ -93,7 +90,7 @@ function AdminEnterpriseAccountsPage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredAccounts.map((account) => (
+                {collection.rows.map((account) => (
                   <tr key={account.id}>
                     <td className="cell-wrap cell-clamp-2" title={account.email}>{account.email}</td>
                     <td className="cell-wrap cell-clamp-2" title={account.companyName || "-"}>{account.companyName || "-"}</td>
@@ -120,6 +117,7 @@ function AdminEnterpriseAccountsPage() {
             </table>
           </div>
         ) : null}
+        {!loading && !error ? <CollectionPagination collection={collection} /> : null}
       </section>
     </Layout>
   );

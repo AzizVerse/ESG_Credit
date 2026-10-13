@@ -1,3 +1,4 @@
+import { t } from "../i18n/french";
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
@@ -5,7 +6,7 @@ import api from "../api/client";
 import Layout from "../components/Layout";
 
 const SUPPORTED_SECTORS = [
-  "Services bancaires / FI",
+  "Technology",
   "Industrie lourde",
   "Textile",
   "Agroalimentaire",
@@ -42,7 +43,7 @@ function NewApplicationPage() {
   function getEnterpriseErrorMessage(requestError) {
     const message =
       requestError.response?.data?.message || requestError.message || "";
-    return message === "Access denied"
+    return t(message) === "Accès refusé"
       ? "Vous n’êtes pas autorisé à accéder à cette ressource."
       : message || "Création de la demande impossible.";
   }
@@ -93,6 +94,7 @@ function NewApplicationPage() {
     try {
       const response = await api.post("/applications", {
         ...form,
+        activitySector: SUPPORTED_SECTORS.find((sector) => t(sector).toLowerCase() === form.activitySector.trim().toLowerCase()) || form.activitySector,
         isIndustrialZone:
           form.isIndustrialZone === "true"
             ? true
@@ -121,7 +123,7 @@ function NewApplicationPage() {
 
   if (checkingExisting) {
     return (
-      <Layout title="Créer une demande" subtitle="Vérification de votre dossier SGES.">
+      <Layout title="Créer une demande" subtitle="Review your ESMS application.">
         <section className="panel stack">
           <p className="muted-text">Vérification de la demande existante...</p>
         </section>
@@ -131,7 +133,7 @@ function NewApplicationPage() {
 
   if (existingApplication) {
     return (
-      <Layout title="Créer une demande" subtitle="Une seule demande SGES est autorisée par entreprise.">
+      <Layout title="Créer une demande" subtitle="Each company can have one ESMS application.">
         <section className="panel stack">
           <h3>Demande déjà existante</h3>
           <p className="muted-text">Une demande SGES existe déjà pour votre entreprise.</p>
@@ -148,7 +150,7 @@ function NewApplicationPage() {
   return (
     <Layout
       title="Créer une demande"
-      subtitle="Renseignez les informations de base du projet avant de compléter l’évaluation SGES."
+      subtitle="Enter your project details before completing the ESMS assessment."
     >
       <section className="panel form-panel stack">
         <div>
@@ -172,17 +174,16 @@ function NewApplicationPage() {
                 value={form.activitySector}
                 onChange={handleChange}
                 list="supported-sectors"
-                placeholder="Ex. Industrie lourde, Textile, Transport..."
+                placeholder="Ex. : Industrie lourde, Textile, Transport..."
                 required
               />
               <datalist id="supported-sectors">
                 {SUPPORTED_SECTORS.map((sector) => (
-                  <option key={sector} value={sector} />
+                  <option key={sector} value={t(sector)} />
                 ))}
               </datalist>
               <small className="muted-text">
-                Secteurs supportés : Services bancaires / FI, Industrie lourde, Textile,
-                Agroalimentaire, BTP / construction, Transport ou Autre.
+                Secteurs proposés : Technologie, Industrie lourde, Textile, Agroalimentaire, BTP / construction, Transport ou Autre.
               </small>
             </label>
             <label className="field">
@@ -378,10 +379,10 @@ function NewApplicationPage() {
             </label>
           </section>
 
-          {error ? <p className="error-text">{error}</p> : null}
+          {error ? <p className="error-text">{t(error)}</p> : null}
 
           <button type="submit" className="primary-button" disabled={loading}>
-            {loading ? "Création en cours..." : "Créer la demande"}
+            {loading ? "Création..." : "Créer la demande"}
           </button>
         </form>
       </section>

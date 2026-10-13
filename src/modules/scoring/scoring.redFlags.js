@@ -14,7 +14,7 @@ function addFlag(flags, flag) {
 }
 
 function isLowPermitExposureSector(detectedSector) {
-  return ["Services bancaires / FI"].includes(detectedSector);
+  return ["Technology"].includes(detectedSector);
 }
 
 function buildRedFlags({ answersByCode, category, detectedSector }) {

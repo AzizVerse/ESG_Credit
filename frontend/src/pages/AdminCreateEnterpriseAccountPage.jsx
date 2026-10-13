@@ -1,3 +1,4 @@
+import { t } from "../i18n/french";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -45,7 +46,7 @@ function AdminCreateEnterpriseAccountPage() {
   return (
     <Layout
       title="Créer un compte entreprise"
-      subtitle="Ajoutez un nouvel accès entreprise pour la plateforme SGES."
+      subtitle="Create a company account for EQUORA."
       actions={
         <Link to="/admin/enterprise-accounts" className="ghost-button">
           Voir les comptes
@@ -63,7 +64,7 @@ function AdminCreateEnterpriseAccountPage() {
 
           <form className="stack" onSubmit={handleSubmit}>
             <label className="field">
-              <span>Email</span>
+              <span>Adresse e-mail</span>
               <input
                 type="email"
                 name="email"
@@ -87,8 +88,8 @@ function AdminCreateEnterpriseAccountPage() {
               />
             </label>
 
-            {error ? <p className="error-text">{error}</p> : null}
-            {success ? <p className="success-text">{success}</p> : null}
+            {error ? <p className="error-text">{t(error)}</p> : null}
+            {success ? <p className="success-text">{t(success)}</p> : null}
 
             <button type="submit" className="primary-button" disabled={loading}>
               {loading ? "Création..." : "Créer le compte"}
@@ -107,7 +108,7 @@ function AdminCreateEnterpriseAccountPage() {
           {createdAccount ? (
             <div className="stack">
               <div className="summary-row">
-                <span>Email</span>
+                <span>Adresse e-mail</span>
                 <strong>{createdAccount.email}</strong>
               </div>
               <div className="summary-row">

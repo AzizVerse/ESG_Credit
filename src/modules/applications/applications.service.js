@@ -87,6 +87,7 @@ function getApplicationInclude() {
   return {
     company: true,
     projectProfile: true,
+    exclusionScreening: true,
   };
 }
 
@@ -292,12 +293,19 @@ async function submitApplication(user, applicationId) {
     throw new ApiError("Only draft applications can be submitted", 400);
   }
 
-  const application = await prisma.application.update({
-    where: { id: applicationId },
-    data: {
-      status: ApplicationStatus.SUBMITTED,
-    },
-    include: getApplicationInclude(),
+  const application = await prisma.$transaction(async tx => {
+    const current = await tx.application.findUnique({ where: { id: applicationId }, include: { exclusionScreening: true } });
+    if (current.status !== ApplicationStatus.DRAFT) throw new ApiError("Only draft applications can be submitted", 409);
+    const screening = current.exclusionScreening;
+    const { evaluateApplication, POLICY_VERSION } = require("../exclusions/exclusions.rules");
+    if (!screening || screening.policyVersion !== POLICY_VERSION) throw new ApiError("Complete the IFC exclusion screening before submitting", 409);
+    const result = await evaluateApplication(tx, applicationId, screening.scope, screening.answers);
+    if (result.outcome === "NOT_SCREENED") throw new ApiError("Answer every applicable IFC screening question before submitting", 409);
+    const status = result.outcome === "EXCLUDED" ? ApplicationStatus.REJECTED : result.outcome === "REVIEW_REQUIRED" ? ApplicationStatus.UNDER_REVIEW : ApplicationStatus.SUBMITTED;
+    await tx.exclusionScreening.update({ where: { applicationId }, data: { ...result, screenedAt: new Date() } });
+    if (["EXCLUDED", "REVIEW_REQUIRED"].includes(result.outcome)) await tx.eSGAssessmentResult.deleteMany({ where: { applicationId } });
+    await tx.exclusionScreeningEvent.create({ data: { applicationId, actorId: user.id, action: status === "REJECTED" ? "AUTO_REFUSED" : "SUBMISSION_SCREENED", snapshot: { scope: screening.scope, answers: screening.answers, ...result, policyVersion: POLICY_VERSION, applicationStatus: status } } });
+    return tx.application.update({ where: { id: applicationId }, data: { status }, include: getApplicationInclude() });
   });
 
   return toApplicationResponse(application);

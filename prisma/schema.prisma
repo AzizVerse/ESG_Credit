@@ -127,8 +127,32 @@ model Application {
   committeeDecisions   CommitteeDecision[]
   correctiveActions    CorrectiveAction[]
   esgAssessmentResult  ESGAssessmentResult?
+  exclusionScreening   ExclusionScreening?
+  exclusionEvents      ExclusionScreeningEvent[]
   createdAt            DateTime              @default(now())
   updatedAt            DateTime              @updatedAt
+}
+
+model ExclusionScreening {
+  id            String @id @default(uuid())
+  applicationId String @unique
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  scope         String @default("STANDARD_FI")
+  outcome       String @default("NOT_SCREENED")
+  answers       Json
+  reasons       Json
+  policyVersion String
+  screenedAt    DateTime
+}
+
+model ExclusionScreeningEvent {
+  id            String @id @default(uuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  actorId       String
+  action        String
+  snapshot      Json
+  createdAt     DateTime @default(now())
 }
 
 model ESGAssessmentResult {

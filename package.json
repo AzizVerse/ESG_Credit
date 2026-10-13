@@ -8,7 +8,9 @@
     "server:dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "seed": "node prisma/seed.js",
-    "seed:demo": "node prisma/seedDemoData.js",
+    "seed:demo": "node prisma/seedPresentationData.js",
+    "seed:ifc": "node prisma/seedIfcExamples.js",
+    "seed:presentation:reset": "node prisma/seedPresentationData.js --replace-all",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
     "prisma:seed": "node prisma/seed.js"

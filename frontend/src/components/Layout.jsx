@@ -1,20 +1,24 @@
+import { t } from "../i18n/french";
 import { useEffect, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../context/AuthContext";
+import EquoraLogo from "./EquoraLogo";
+import SidebarIcon from "./SidebarIcon";
 
 function getNavigationItems(role) {
   if (role === "ADMIN") {
     return [
-      { to: "/admin", label: "Tableau de bord", shortLabel: "TB", end: true },
-      { to: "/admin/applications", label: "Demandes ESG", shortLabel: "DE", end: true },
-      { to: "/admin/enterprise-accounts", label: "Comptes entreprises", shortLabel: "CE" },
-      { to: "/admin/enterprise-accounts/new", label: "Créer un compte entreprise", shortLabel: "CR" },
+      { to: "/admin", label: "Tableau de bord", icon: "dashboard", end: true },
+      { to: "/admin/applications", label: "Demandes ESG", icon: "application", end: true },
+      { to: "/admin/exclusions", label: "Exclusions IFC", icon: "application", end: true },
+      { to: "/admin/enterprise-accounts", label: "Liste des comptes entreprises", icon: "accounts", end: true },
+      { to: "/admin/enterprise-accounts/new", label: "Créer un compte entreprise", icon: "create", end: true },
     ];
   }
 
   return [
-    { to: "/enterprise", label: "Ma demande", shortLabel: "MD", end: true },
+    { to: "/enterprise", label: "Mes demandes", icon: "application", end: true },
   ];
 }
 
@@ -22,9 +26,11 @@ function Layout({ title, subtitle, children, actions = null }) {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const navigationItems = getNavigationItems(user?.role);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
+    window.matchMedia("(max-width: 1100px)").matches || window.localStorage.getItem("sges_sidebar_collapsed") === "true"
+  );
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => window.matchMedia("(max-width: 1100px)").matches);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -95,10 +101,9 @@ function Layout({ title, subtitle, children, actions = null }) {
         <div className="brand-block">
           <div className="sidebar-brand-row">
             <div>
-              <p className="brand-kicker">STB</p>
-              <h1 className="sidebar-title">Plateforme SGES</h1>
+              <EquoraLogo compact={sidebarCollapsed && !isMobile} />
               <p className="brand-caption">
-                Évaluation environnementale et sociale
+                Cadre intégré d’évaluation et de performance ESG
               </p>
             </div>
             <button
@@ -106,39 +111,43 @@ function Layout({ title, subtitle, children, actions = null }) {
               className="sidebar-toggle"
               onClick={handleToggleSidebar}
               aria-label={isMobile ? "Ouvrir ou fermer le menu" : "Réduire ou ouvrir la barre latérale"}
+              aria-expanded={isMobile ? mobileSidebarOpen : !sidebarCollapsed}
             >
               {isMobile ? (mobileSidebarOpen ? "Fermer" : "Menu") : sidebarCollapsed ? "Ouvrir" : "Réduire"}
             </button>
           </div>
         </div>
 
-        <nav className="sidebar-nav">
+        <nav className="sidebar-nav" aria-label="Navigation principale">
           {navigationItems.map((item, index) => (
             <NavLink
               key={`${item.to}-${index}`}
               to={item.to}
               end={item.end}
+              aria-label={item.label}
               title={sidebarCollapsed ? item.label : undefined}
               onClick={handleCloseMobileSidebar}
               className={({ isActive }) =>
                 isActive ? "sidebar-link sidebar-link-active" : "sidebar-link"
               }
             >
-              <span className="sidebar-link-short">{item.shortLabel}</span>
-              <span className="sidebar-link-label">{item.label}</span>
+              <span className="sidebar-link-short"><SidebarIcon name={item.icon} /></span>
+              <span className="sidebar-link-label">{t(item.label)}</span>
             </NavLink>
           ))}
-
+        </nav>
+        <div className="sidebar-footer">
           <button
             type="button"
-            className="sidebar-link sidebar-link-button"
+            className="sidebar-link sidebar-signout"
+            aria-label="Déconnexion"
             title={sidebarCollapsed ? "Déconnexion" : undefined}
             onClick={handleLogout}
           >
-            <span className="sidebar-link-short">DC</span>
+            <span className="sidebar-link-short"><SidebarIcon name="logout" /></span>
             <span className="sidebar-link-label">Déconnexion</span>
           </button>
-        </nav>
+        </div>
       </aside>
 
       {isMobile && mobileSidebarOpen ? (
@@ -162,9 +171,9 @@ function Layout({ title, subtitle, children, actions = null }) {
                 {mobileSidebarOpen ? "Fermer le menu" : "Ouvrir le menu"}
               </button>
             ) : null}
-            <p className="eyebrow">Plateforme SGES — STB Bank</p>
-            <h2>{title}</h2>
-            {subtitle ? <p className="muted-text">{subtitle}</p> : null}
+            <p className="eyebrow">EQUORA · STB BANK</p>
+            <h2>{t(title)}</h2>
+            {subtitle ? <p className="muted-text">{t(subtitle)}</p> : null}
           </div>
 
           <div className="topbar-user">

@@ -48,7 +48,8 @@ function normalizeAnswers(answers) {
 }
 
 async function saveMyAnswers(user, applicationId, answers) {
-  await getOwnedApplication(user, applicationId);
+  const application = await getOwnedApplication(user, applicationId);
+  if (application.status !== "DRAFT") throw new ApiError("Submitted or refused application answers are locked", 409);
 
   const normalizedAnswers = normalizeAnswers(answers);
 

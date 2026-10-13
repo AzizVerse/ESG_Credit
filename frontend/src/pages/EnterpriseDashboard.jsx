@@ -1,3 +1,5 @@
+import { useCollection, CollectionControls, CollectionPagination, ApplicationFilters, filterApplications } from "../components/CollectionControls";
+import { t } from "../i18n/french";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -6,12 +8,14 @@ import Layout from "../components/Layout";
 
 function EnterpriseDashboard() {
   const [applications, setApplications] = useState([]);
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   function getEnterpriseErrorMessage(requestError) {
     const message = requestError.response?.data?.message || "";
-    return message === "Access denied"
+    return message === "Accès refusé"
       ? "Vous n’êtes pas autorisé à accéder à cette ressource."
       : message || "Chargement des demandes impossible.";
   }
@@ -31,6 +35,9 @@ function EnterpriseDashboard() {
     loadApplications();
   }, []);
 
+  const filtered = useMemo(() => filterApplications(applications, search, status), [applications, search, status]);
+  const collection = useCollection(filtered, JSON.stringify([search, status]));
+
   const metrics = useMemo(() => {
     const byStatus = applications.reduce(
       (accumulator, application) => {
@@ -44,7 +51,7 @@ function EnterpriseDashboard() {
     return [
       { label: "Nombre total de demandes", value: byStatus.total },
       { label: "Brouillons", value: byStatus.DRAFT || 0 },
-      { label: "Soumises", value: byStatus.SUBMITTED || 0 },
+      { label: "Soumise", value: byStatus.SUBMITTED || 0 },
       { label: "En revue", value: byStatus.UNDER_REVIEW || 0 },
     ];
   }, [applications]);
@@ -54,7 +61,7 @@ function EnterpriseDashboard() {
   return (
     <Layout
       title="Tableau de bord entreprise"
-      subtitle="Consultez votre demande et poursuivez l’évaluation SGES de votre projet."
+      subtitle="View your application and continue your project's ESMS assessment."
       actions={
         existingApplication ? (
           <Link to={`/enterprise/applications/${existingApplication.id}`} className="primary-button">
@@ -71,7 +78,7 @@ function EnterpriseDashboard() {
         <div className="metric-grid">
           {metrics.map((metric) => (
             <article key={metric.label} className="metric-card">
-              <p className="metric-label">{metric.label}</p>
+              <p className="metric-label">{t(metric.label)}</p>
               <strong className="metric-value">{metric.value}</strong>
             </article>
           ))}
@@ -88,10 +95,12 @@ function EnterpriseDashboard() {
           </div>
 
           {loading ? <p className="muted-text">Chargement des demandes...</p> : null}
-          {error ? <p className="error-text">{error}</p> : null}
+          {error ? <p className="error-text">{t(error)}</p> : null}
 
-          {!loading ? (
-            <div className="table-wrapper">
+          {!loading && !error ? (
+            <><ApplicationFilters search={search} status={status} onSearch={setSearch} onStatus={setStatus} />
+              <CollectionControls collection={collection} total={(applications).length} active={Boolean(search || status)} onReset={() => { setSearch(""); setStatus(""); }} />
+            <div className="table-wrapper" tabIndex={0} role="region" aria-label="Résultats des demandes">
               <table className="data-table admin-table">
                 <colgroup>
                   <col style={{ width: "26%" }} />
@@ -112,18 +121,18 @@ function EnterpriseDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {applications.map((application) => (
+                  {collection.rows.map((application) => (
                     <tr key={application.id}>
                       <td className="cell-wrap cell-clamp-2" title={application.projectName}>
                         {application.projectName}
                       </td>
                       <td>
                         <span className={`status-badge status-${application.status?.toLowerCase()}`}>
-                          {application.status}
+                          {t(application.status)}
                         </span>
                       </td>
                       <td className="cell-wrap cell-clamp-2" title={application.projectType || "-"}>
-                        {application.projectType || "-"}
+                        {t(application.projectType || "-")}
                       </td>
                       <td className="numeric-cell">{application.financingAmount ?? "-"}</td>
                       <td>{new Date(application.createdAt).toLocaleDateString("fr-FR")}</td>
@@ -137,16 +146,18 @@ function EnterpriseDashboard() {
                       </td>
                     </tr>
                   ))}
-                  {!applications.length ? (
+                  {!collection.total ? (
                     <tr>
                       <td colSpan="6" className="empty-cell">
-                        Aucune demande disponible pour le moment.
+                        Aucune demande ne correspond à vos filtres.
                       </td>
                     </tr>
                   ) : null}
                 </tbody>
               </table>
             </div>
+            <CollectionPagination collection={collection} />
+            </>
           ) : null}
         </section>
       </section>

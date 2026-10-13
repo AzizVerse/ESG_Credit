@@ -1,8 +1,12 @@
+import { t } from "../i18n/french";
+import { normalizeSearch } from "../components/CollectionControls";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import api from "../api/client";
 import Layout from "../components/Layout";
+import ExclusionScreening from "../components/ExclusionScreening";
+import { useScoringCalculation } from "../context/ScoringActionsContext";
 
 function getZoneLabel(zoneType) {
   if (zoneType === "URBAN") return "Zone urbaine";
@@ -46,7 +50,7 @@ function getDocumentTypeLabel(documentType) {
     CLIMATE_QUESTIONS: "Questions climatiques",
   };
 
-  return labels[documentType] || documentType || "Autres pièces";
+  return t(labels[documentType] || documentType || "Autres pièces");
 }
 
 function getStatusLabel(status) {
@@ -104,6 +108,10 @@ function getCategoryClass(category) {
     .replace(/[^a-z]/g, "") || "unknown";
 }
 
+function formatScore(score) {
+  return typeof score === "number" ? score.toLocaleString("fr-FR", { maximumFractionDigits: 2 }) : "-";
+}
+
 function getScoreInterpretation(score) {
   if (typeof score !== "number") return "-";
   if (score >= 80) return "Solide";
@@ -119,13 +127,13 @@ function getExecutiveSummary(result) {
 
   const base =
     result.riskLevel === "Élevé"
-      ? `Le dossier présente une catégorie SGES ${result.categoryAuto || "-"} avec un niveau de risque ${result.riskLevel}.`
+      ? `Le dossier relève de la catégorie SGES ${t(result.categoryAuto || "-")} et présente un risque élevé. Une attention prioritaire est requise.`
       : result.riskLevel === "Modéré"
-        ? `Le dossier présente une catégorie SGES ${result.categoryAuto || "-"} avec un niveau de risque ${result.riskLevel}, nécessitant un suivi ciblé.`
-        : `Le dossier présente une catégorie SGES ${result.categoryAuto || "-"} avec un niveau de risque ${result.riskLevel}, globalement maîtrisé.`;
+        ? `Le dossier relève de la catégorie SGES ${t(result.categoryAuto || "-")} et présente un risque modéré. Un suivi ciblé est recommandé.`
+        : `Le dossier relève de la catégorie SGES ${t(result.categoryAuto || "-")} et présente un niveau de risque ${t(result.riskLevel || "À déterminer").toLowerCase()}.`;
 
   if (!result.redFlags?.length) {
-    return `${base} Aucun red flag critique n’a été identifié à ce stade.`;
+    return `${base} Aucune alerte critique n’a été identifiée à ce stade.`;
   }
 
   const topFlags = result.redFlags
@@ -135,9 +143,9 @@ function getExecutiveSummary(result) {
       return (order[left.severity] ?? 9) - (order[right.severity] ?? 9);
     })
     .slice(0, 3)
-    .map((flag) => flag.message);
+    .map((flag) => t(flag.message));
 
-  return `${base} Les principaux points de vigilance concernent ${topFlags.join(", ")}.`;
+  return `${base} Principaux points de vigilance : ${topFlags.join(" ")}`;
 }
 
 function buildFormMetadata(formTemplate) {
@@ -188,7 +196,7 @@ function groupAnswersBySection(answers, metadata) {
       requiresAttachment: questionMeta?.requiresAttachment,
       type: questionMeta?.type,
       metadata: questionMeta?.metadata,
-      questionLabel: questionMeta?.label || answer.questionCode,
+      questionLabel: questionMeta?.label || "Détails de la question indisponibles",
     });
   }
 
@@ -231,7 +239,7 @@ function renderAnswerTable(answer) {
   }
 
   return (
-    <div className="table-wrapper">
+    <div className="table-wrapper" tabIndex={0} role="region" aria-label="Tableau du questionnaire">
       <table className="data-table compact-table">
         <thead>
           <tr>
@@ -239,16 +247,16 @@ function renderAnswerTable(answer) {
               <th>Question / ligne</th>
             ) : null}
             {columns.map((column) => (
-              <th key={column.key}>{column.label}</th>
+              <th key={column.key}>{t(column.label)}</th>
             ))}
           </tr>
         </thead>
         <tbody>
           {rows.map((row, index) => (
             <tr key={`${answer.questionCode}-${index}`}>
-              {Object.prototype.hasOwnProperty.call(row, "label") ? <td>{row.label}</td> : null}
+              {Object.prototype.hasOwnProperty.call(row, "label") ? <td>{t(row.label)}</td> : null}
               {columns.map((column) => (
-                <td key={column.key}>{row[column.key] || "-"}</td>
+                <td key={column.key}>{column.type === "choice" ? t(column.options?.find((option) => option.value === row[column.key])?.label || row[column.key] || "-") : row[column.key] || "-"}</td>
               ))}
             </tr>
           ))}
@@ -268,6 +276,7 @@ function groupBy(items, key) {
 }
 
 function AdminApplicationDetail() {
+  const calculate = useScoringCalculation();
   const { id } = useParams();
   const [application, setApplication] = useState(null);
   const [answers, setAnswers] = useState([]);
@@ -280,6 +289,7 @@ function AdminApplicationDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState("resume");
+  const [answerSearch, setAnswerSearch] = useState("");
 
   useEffect(() => {
     async function loadScoringResult() {
@@ -332,6 +342,9 @@ function AdminApplicationDetail() {
     () => groupAnswersBySection(answers, formMetadata),
     [answers, formMetadata]
   );
+  const visibleAnswerGroups = useMemo(() => groupedAnswers.map((group) => ({ ...group,
+    answers: group.answers.filter((answer) => normalizeSearch(`${t(group.sectionTitle)} ${answer.questionCode || ""} ${t(answer.questionLabel)} ${t(answer.answerLabel || "")}`).includes(normalizeSearch(answerSearch.trim())))
+  })).filter((group) => group.answers.length), [groupedAnswers, answerSearch]);
   const attachmentsByDocumentType = useMemo(
     () => groupAttachmentsByDocumentType(attachments),
     [attachments]
@@ -370,7 +383,8 @@ function AdminApplicationDetail() {
   async function handleCalculateScoring() {
     try {
       setEsgActionLoading(true);
-      const response = await api.post(`/scoring/applications/${id}/calculate`);
+      const response = await calculate({ mode: "single", applicationId: id });
+      if (!response) return;
       setEsgResult(response.data.data);
       setEsgError("");
       setApplication((current) =>
@@ -392,10 +406,10 @@ function AdminApplicationDetail() {
   }
 
   const tabs = [
-    { id: "resume", label: "Résumé" },
+    { id: "resume", label: "Vue d’ensemble" },
     { id: "profile", label: "Signalétique du projet" },
     { id: "attachments", label: "Pièces justificatives" },
-    { id: "answers", label: "Réponses SGES" },
+    { id: "réponses", label: "Réponses SGES" },
     { id: "esg", label: "Bilan ESG" },
     { id: "observations", label: "Observations administrateur" },
   ];
@@ -403,7 +417,7 @@ function AdminApplicationDetail() {
   return (
     <Layout
       title="Examen de la demande"
-      subtitle="Analyse détaillée du dossier SGES soumis par l’entreprise."
+      subtitle="Review the company's submitted ESMS application in detail."
       actions={
         <div className="topbar-actions">
           <Link to="/admin" className="ghost-button">
@@ -415,9 +429,10 @@ function AdminApplicationDetail() {
         </div>
       }
     >
-      <section className="stack">
+      <section className="stack project-detail-page">
+        {application ? <ExclusionScreening application={application} admin onSaved={() => api.get(`/applications/${application.id}`).then(response => { setApplication(response.data.data); if (["EXCLUDED", "REVIEW_REQUIRED"].includes(response.data.data.exclusionScreening?.outcome)) setEsgResult(null); })} /> : null}
         {loading ? <p className="muted-text">Chargement du détail de la demande...</p> : null}
-        {error ? <p className="error-text">{error}</p> : null}
+        {error ? <p className="error-text">{t(error)}</p> : null}
 
         {application ? (
           <>
@@ -433,11 +448,11 @@ function AdminApplicationDetail() {
                 <div className="summary-facts">
                   <div className="summary-row">
                     <span>Statut</span>
-                    <strong>{getStatusLabel(application.status)}</strong>
+                    <strong>{t(getStatusLabel(application.status))}</strong>
                   </div>
                   <div className="summary-row">
                     <span>Type de projet</span>
-                    <strong>{application.projectType || "-"}</strong>
+                    <strong>{t(application.projectType || "-")}</strong>
                   </div>
                   <div className="summary-row">
                     <span>Montant du financement</span>
@@ -449,7 +464,7 @@ function AdminApplicationDetail() {
                   </div>
                   <div className="summary-row">
                     <span>Catégorie automatique</span>
-                    <strong>{application.categoryAuto || "-"}</strong>
+                    <strong>{t(application.categoryAuto || "-")}</strong>
                   </div>
                   <div className="summary-row">
                     <span>Date de soumission</span>
@@ -467,7 +482,7 @@ function AdminApplicationDetail() {
                   className={activeTab === tab.id ? "tab-button tab-button-active" : "tab-button"}
                   onClick={() => setActiveTab(tab.id)}
                 >
-                  {tab.label}
+                  {t(tab.label)}
                 </button>
               ))}
             </div>
@@ -478,19 +493,17 @@ function AdminApplicationDetail() {
                   <h3>Résumé du dossier</h3>
                   <div className="summary-row"><span>Entreprise</span><strong>{application.company?.name || "-"}</strong></div>
                   <div className="summary-row"><span>Projet</span><strong>{application.projectName || "-"}</strong></div>
-                  <div className="summary-row"><span>Type d’activité</span><strong>{application.activityType || "-"}</strong></div>
-                  <div className="summary-row"><span>Statut</span><strong>{getStatusLabel(application.status)}</strong></div>
+                  <div className="summary-row"><span>Type d’activité</span><strong>{t(application.activityType || "-")}</strong></div>
+                  <div className="summary-row"><span>Statut</span><strong>{t(getStatusLabel(application.status))}</strong></div>
                 </article>
 
                 <article className="panel stack">
                   <h3>Revue SGES</h3>
                   <p className="muted-text">
-                    Le dossier comprend {answers.length} réponse(s) et {attachments.length} pièce(s)
-                    justificative(s).
+                    Le dossier comprend {answers.length} réponse(s) et {attachments.length} pièce(s) justificative(s).
                   </p>
                   <p className="muted-text">
-                    Utilisez les onglets pour consulter la signalétique, les pièces et les réponses
-                    détaillées.
+                    Utilisez les onglets pour consulter la signalétique, les pièces et les réponses détaillées.
                   </p>
                 </article>
               </section>
@@ -500,7 +513,7 @@ function AdminApplicationDetail() {
               <section className="panel stack">
                 <h3>Signalétique du projet</h3>
                 {profileDetails ? (
-                  <div className="detail-grid">
+                  <div className="detail-grid project-profile-fields">
                     <div className="summary-row"><span>Nom ou raison sociale</span><strong>{profileDetails.legalName || "-"}</strong></div>
                     <div className="summary-row"><span>Adresse</span><strong>{profileDetails.address || "-"}</strong></div>
                     <div className="summary-row"><span>Zone d’implantation</span><strong>{getZoneLabel(profileDetails.zoneType)}</strong></div>
@@ -511,7 +524,7 @@ function AdminApplicationDetail() {
                     <div className="summary-row"><span>Superficie totale</span><strong>{profileDetails.totalSurface ?? "-"}</strong></div>
                     <div className="summary-row"><span>Superficie couverte</span><strong>{profileDetails.coveredSurface ?? "-"}</strong></div>
                     <div className="summary-row"><span>Type de projet</span><strong>{getProjectNatureLabel(profileDetails.projectNature)}</strong></div>
-                    <div className="summary-row"><span>Secteur d’activité</span><strong>{profileDetails.activitySector || "-"}</strong></div>
+                    <div className="summary-row"><span>Secteur d’activité</span><strong>{t(profileDetails.activitySector || "-")}</strong></div>
                     <div className="summary-row summary-row-full"><span>Descriptif du projet</span><strong>{profileDetails.projectDescription || "-"}</strong></div>
                   </div>
                 ) : (
@@ -525,7 +538,7 @@ function AdminApplicationDetail() {
                 <h3>Pièces justificatives</h3>
                 {!attachments.length ? <p className="muted-text">Aucune pièce justificative ajoutée.</p> : null}
                 {Object.entries(attachmentsByDocumentType).map(([documentType, items]) => (
-                  <div key={documentType} className="stack">
+                  <div key={documentType} className="stack data-scroll" tabIndex={0} role="region" aria-label={`${getDocumentTypeLabel(documentType)} documents`}>
                     <p className="eyebrow">{getDocumentTypeLabel(documentType)}</p>
                     {items.map((attachment) => (
                       <div key={attachment.id} className="attachment-row">
@@ -547,41 +560,33 @@ function AdminApplicationDetail() {
               </section>
             ) : null}
 
-            {activeTab === "answers" ? (
+            {activeTab === "réponses" ? (
               <section className="stack">
-                {groupedAnswers.map((group) => (
-                  <details key={group.sectionCode} className="panel accordion-panel" open>
-                    <summary>{group.sectionTitle}</summary>
-                    <div className="stack accordion-body">
+                <div className="panel collection-controls review-search-toolbar">
+                  <label className="field"><span>Rechercher dans les réponses</span><input type="search" value={answerSearch} onChange={(event) => setAnswerSearch(event.target.value)} placeholder="Section, question ou réponse" /></label>
+                  <button type="button" className="ghost-button" disabled={!answerSearch} onClick={() => setAnswerSearch("")}>Effacer la recherche</button>
+                </div>
+                {!visibleAnswerGroups.length ? <p className="muted-text" role="status">Aucune réponse ne correspond à votre recherche.</p> : null}
+                {visibleAnswerGroups.map((group) => (
+                  <details key={group.sectionCode} className="panel accordion-panel answers-section" open>
+                    <summary><span>{t(group.sectionTitle)}</span><span className="answer-count">{group.answers.length} réponses</span></summary>
+                    <div className="stack accordion-body data-scroll answers-list" tabIndex={0} role="region" aria-label={t(group.sectionTitle)}>
                       {group.answers.map((answer) => (
-                        <article key={answer.id} className="question-review-card">
-                          <div className="stack-tight">
-                            <h4>{answer.questionLabel}</h4>
-                            <p className="muted-text">Code : {answer.questionCode}</p>
+                        <article key={answer.id} className="question-review-card answer-detail-card">
+                          <div className="answer-detail-heading">
+                            <h4>{t(answer.questionLabel)}</h4>
+                            {answer.requiresAttachment === true ? <span className="answer-document-tag">Pièce justificative requise</span> : null}
                           </div>
 
                           {answer.type === "TABLE" ? (
                             renderAnswerTable(answer) || (
-                              <p><strong>Réponse :</strong> {answer.answerLabel || answer.answerValue || "-"}</p>
+                              <div className="answer-detail-value"><span>Réponse</span><p>{t(answer.answerLabel || answer.answerValue || "Not answered")}</p></div>
                             )
                           ) : (
-                            <>
-                              <p><strong>Réponse :</strong> {answer.answerLabel || answer.answerValue || "-"}</p>
-                              {answer.answerLabel && answer.answerValue && answer.answerLabel !== answer.answerValue ? (
-                                <p className="muted-text">Valeur technique : {answer.answerValue}</p>
-                              ) : null}
-                            </>
+                            <div className="answer-detail-value"><span>Réponse</span><p>{t(answer.answerLabel || answer.answerValue || "Not answered")}</p></div>
                           )}
 
-                          <p><strong>Commentaire :</strong> {answer.comment || "-"}</p>
-                          <p>
-                            <strong>Pièce justificative requise :</strong>{" "}
-                            {answer.requiresAttachment === true
-                              ? "Oui"
-                              : answer.requiresAttachment === false
-                                ? "Non"
-                                : "-"}
-                          </p>
+                          {answer.comment?.trim() ? <div className="answer-detail-comment"><span>Commentaire</span><p>{answer.comment}</p></div> : null}
                         </article>
                       ))}
                     </div>
@@ -610,7 +615,7 @@ function AdminApplicationDetail() {
                       type="button"
                       className="primary-button"
                       onClick={handleCalculateScoring}
-                      disabled={esgActionLoading}
+                        disabled={esgActionLoading || ["EXCLUDED", "REVIEW_REQUIRED"].includes(application.exclusionScreening?.outcome)}
                     >
                       {esgResult ? "Recalculer le bilan ESG" : "Calculer le bilan ESG"}
                     </button>
@@ -631,29 +636,29 @@ function AdminApplicationDetail() {
                   <>
                     <article className="esg-executive-card">
                       <p className="eyebrow">Synthèse exécutive</p>
-                      <p className="executive-summary-text">{getExecutiveSummary(esgResult)}</p>
+                      <p className="executive-summary-text">{t(getExecutiveSummary(esgResult))}</p>
                     </article>
 
                     <div className="esg-summary-grid">
                       <article className="metric-card esg-summary-card">
                         <p className="metric-label">Catégorie SGES</p>
                         <span className={`esg-badge esg-category-badge esg-category-${getCategoryClass(esgResult.categoryAuto)}`}>
-                          {esgResult.categoryAuto || "-"}
+                          {t(esgResult.categoryAuto || "-")}
                         </span>
                       </article>
                       <article className="metric-card esg-summary-card">
                         <p className="metric-label">Niveau de risque</p>
                         <span className={`esg-badge esg-risk-badge esg-risk-${(esgResult.riskLevel || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z]/g, "") || "unknown"}`}>
-                          {getRiskLabel(esgResult.riskLevel)}
+                          {t(getRiskLabel(esgResult.riskLevel))}
                         </span>
                       </article>
                       <article className="metric-card esg-summary-card">
                         <p className="metric-label">Score global ESG</p>
-                        <strong className="metric-value metric-value-compact">{esgResult.scores?.global ?? "-"}</strong>
+                        <strong className="metric-value metric-value-compact">{formatScore(esgResult.scores?.global)}</strong>
                       </article>
                       <article className="metric-card esg-summary-card">
                         <p className="metric-label">Secteur détecté</p>
-                        <strong className="metric-value metric-value-text">{esgResult.sector || "-"}</strong>
+                        <strong className="metric-value metric-value-text">{t(esgResult.sector || "-")}</strong>
                       </article>
                       <article className="metric-card esg-summary-card">
                         <p className="metric-label">Calcul / moteur</p>
@@ -675,10 +680,10 @@ function AdminApplicationDetail() {
                         <article key={scoreCard.label} className="panel esg-score-card">
                           <div className="section-header">
                             <div>
-                              <h4>{scoreCard.label}</h4>
+                              <h4>{t(scoreCard.label)}</h4>
                               <p className="muted-text">{getScoreInterpretation(scoreCard.value)}</p>
                             </div>
-                            <strong className="score-card-value">{scoreCard.value ?? "-"}</strong>
+                            <strong className="score-card-value">{formatScore(scoreCard.value)}</strong>
                           </div>
                           <div className="progress-track">
                             <div
@@ -691,10 +696,10 @@ function AdminApplicationDetail() {
                     </div>
 
                     <article className="stack">
-                      <h4>Red flags</h4>
+                      <h4>Alertes ESG</h4>
                       {!esgResult.redFlags?.length ? (
                         <div className="esg-success-state">
-                          <p className="success-text">Aucun red flag critique identifié.</p>
+                          <p className="success-text">Aucune alerte critique identifiée.</p>
                         </div>
                       ) : (
                         redFlagsBySeverity.map((group) =>
@@ -706,7 +711,7 @@ function AdminApplicationDetail() {
                                   {group.items.length}
                                 </span>
                               </div>
-                              <div className="esg-card-grid">
+                              <div className="esg-card-grid data-scroll" tabIndex={0} role="region" aria-label="Constats du bilan">
                                 {group.items.map((flag, index) => {
                                   const questionDisplay = getQuestionDisplay(flag.questionCode, formMetadata);
 
@@ -720,12 +725,9 @@ function AdminApplicationDetail() {
                                           {getPillarLabel(flag.pillar)}
                                         </span>
                                       </div>
-                                      <p className="flag-message">{flag.message}</p>
+                                      <p className="flag-message">{t(flag.message)}</p>
                                       {questionDisplay.label ? (
-                                        <p><strong>Question :</strong> {questionDisplay.label}</p>
-                                      ) : null}
-                                      {questionDisplay.code ? (
-                                        <p className="muted-text">Code interne : {questionDisplay.code}</p>
+                                        <p><strong>Question :</strong> {t(questionDisplay.label)}</p>
                                       ) : null}
                                     </div>
                                   );
@@ -743,9 +745,9 @@ function AdminApplicationDetail() {
                         {!esgResult.strengths?.length ? (
                           <p className="muted-text">Aucun point fort mis en évidence.</p>
                         ) : (
-                          <ul className="esg-bullet-list">
+                          <ul className="esg-bullet-list data-scroll" tabIndex={0} aria-label="Points forts du bilan">
                             {esgResult.strengths.map((item, index) => (
-                              <li key={`strength-${index}`}>{item}</li>
+                              <li key={`strength-${index}`}>{t(item)}</li>
                             ))}
                           </ul>
                         )}
@@ -755,14 +757,14 @@ function AdminApplicationDetail() {
                         <h4>Points faibles</h4>
                         {!esgResult.weaknesses?.length ? (
                           esgResult.redFlags?.length ? (
-                            <p className="muted-text">Des points de vigilance sont signalés dans les red flags ci-dessus.</p>
+                            <p className="muted-text">Des points de vigilance sont signalés dans les alertes ci-dessus.</p>
                           ) : (
                             <p className="muted-text">Aucun point faible majeur identifié.</p>
                           )
                         ) : (
-                          <ul className="esg-bullet-list">
+                          <ul className="esg-bullet-list data-scroll" tabIndex={0} aria-label="Points faibles du bilan">
                             {esgResult.weaknesses.map((item, index) => (
-                              <li key={`weakness-${index}`}>{item}</li>
+                              <li key={`weakness-${index}`}>{t(item)}</li>
                             ))}
                           </ul>
                         )}
@@ -780,14 +782,12 @@ function AdminApplicationDetail() {
                               <div className="section-header">
                                 <h4>{getPriorityLabel(group.priority)}</h4>
                               </div>
-                              <div className="esg-card-grid">
+                              <div className="esg-card-grid data-scroll" tabIndex={0} role="region" aria-label="Recommandations du bilan">
                                 {group.items.map((item, index) => {
                                   const sourceReferences = (item.sourceCodes || [])
                                     .map((code) => {
                                       const questionDisplay = getQuestionDisplay(code, formMetadata);
-                                      return questionDisplay.label
-                                        ? `${questionDisplay.label} (${code})`
-                                        : code;
+                                      return t(questionDisplay.label);
                                     })
                                     .filter(Boolean);
 
@@ -801,7 +801,7 @@ function AdminApplicationDetail() {
                                           {getPillarLabel(item.pillar)}
                                         </span>
                                       </div>
-                                      <p className="recommendation-action">{item.title}</p>
+                                      <p className="recommendation-action">{t(item.title)}</p>
                                       {sourceReferences.length ? (
                                         <p><strong>Références :</strong> {sourceReferences.join(", ")}</p>
                                       ) : null}
@@ -824,13 +824,13 @@ function AdminApplicationDetail() {
                           <details key={item.sectionCode} className="panel accordion-panel esg-section-card">
                             <summary>
                               <div className="accordion-summary-row">
-                                <span>{item.sectionTitle}</span>
+                                <span>{t(item.sectionTitle)}</span>
                                 <span className="esg-badge esg-pillar-badge">{getPillarLabel(item.pillar)}</span>
                               </div>
                             </summary>
                             <div className="stack accordion-body">
                               <div className="section-header">
-                                <strong className="score-card-value">{item.score}</strong>
+                                <strong className="score-card-value">{formatScore(item.score)}</strong>
                                 <span className="muted-text">{getScoreInterpretation(item.score)}</span>
                               </div>
                               <div className="progress-track">
@@ -839,7 +839,7 @@ function AdminApplicationDetail() {
                                   style={{ width: `${Math.max(0, Math.min(item.score || 0, 100))}%` }}
                                 />
                               </div>
-                              <p><strong>Synthèse :</strong> {item.summary}</p>
+                              <p><strong>Synthèse :</strong> {t(item.summary)}</p>
                             </div>
                           </details>
                         ))

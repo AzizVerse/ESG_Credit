@@ -1,5 +1,5 @@
 function isLowPermitExposureSector(detectedSector) {
-  return ["Services bancaires / FI"].includes(detectedSector);
+  return ["Technology"].includes(detectedSector);
 }
 
 function buildRecommendations({ answersByCode, redFlags, detectedSector }) {

@@ -12,7 +12,7 @@
 //   - A band maps to a base weight.
 //   - A sector multiplier makes the same question matter more/less depending on
 //     the detected sector (e.g. liquid-waste control matters more in
-//     Agroalimentaire / Industrie lourde than in Services / FI).
+//     Agroalimentaire / Industrie lourde than in Technology).
 //   - The final question weight = bandWeight * sectorMultiplier.
 //
 // "role" is documentation only (the archetype a question belongs to); the
@@ -28,19 +28,19 @@ const BAND_WEIGHTS = {
 const DEFAULT_WEIGHT = 1;
 
 // Sector labels must match those produced by scoring.sectorWeights.js:
-//   "Services bancaires / FI", "Industrie lourde", "Textile",
+//   "Technology", "Industrie lourde", "Textile",
 //   "Agroalimentaire", "BTP / construction", "Transport", "Autre".
 const QUESTION_WEIGHTS = {
   // --- Réglementation nationale (compliance) ---
   REG_001: {
     role: "COMPLIANCE",
     band: "CRITICAL",
-    sector: { "Industrie lourde": 1.5, Agroalimentaire: 1.3, "BTP / construction": 1.3, "Services bancaires / FI": 0.5 },
+    sector: { "Industrie lourde": 1.5, Agroalimentaire: 1.3, "BTP / construction": 1.3, Technology: 0.5 },
   },
   REG_002: { role: "COMPLIANCE", band: "HIGH" },
-  REG_003: { role: "COMPLIANCE", band: "CRITICAL", sector: { "Services bancaires / FI": 0.5 } },
+  REG_003: { role: "COMPLIANCE", band: "CRITICAL", sector: { Technology: 0.5 } },
   REG_004: { role: "COMPLIANCE", band: "MEDIUM", sector: { "Industrie lourde": 1.3 } },
-  REG_005: { role: "COMPLIANCE", band: "HIGH", sector: { "Services bancaires / FI": 0.5 } },
+  REG_005: { role: "COMPLIANCE", band: "HIGH", sector: { Technology: 0.5 } },
 
   // --- Certifications (credentials) ---
   CERT_001: { role: "CREDENTIAL", band: "MEDIUM" },

@@ -1,0 +1,10 @@
+const router = require("express").Router();
+const auth = require("../../middleware/auth.middleware");
+const role = require("../../middleware/role.middleware");
+const response = require("../../utils/apiResponse");
+const service = require("./exclusions.service");
+router.use(auth);
+router.get("/admin/summary", role("ADMIN"), async (req, res, next) => { try { return response.success(res, await service.summary()); } catch (e) { next(e); } });
+router.get("/applications/:id", role("ADMIN", "ENTERPRISE"), async (req, res, next) => { try { return response.success(res, await service.get(req.user, req.params.id)); } catch (e) { next(e); } });
+router.put("/applications/:id", role("ADMIN", "ENTERPRISE"), async (req, res, next) => { try { return response.success(res, await service.save(req.user, req.params.id, req.body)); } catch (e) { next(e); } });
+module.exports = router;

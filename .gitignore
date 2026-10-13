@@ -5,3 +5,7 @@ coverage/
 *.log
 prisma/*.db
 prisma/*.db-journal
+prisma/scoring-sector-settings.json
+prisma/scoring-sector-settings.json.*.tmp
+backups/
+uploads/
